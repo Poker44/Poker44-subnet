@@ -32,14 +32,14 @@ adapter. Human hands are chosen randomly out of massive dataset whereas bot hand
 
 ---
 
-### Register on Subnet 87
+### Register on Subnet 126
 
 ```bash
 # Register your validator on Poker44 subnet
 btcli subnet register \
   --wallet.name p44_cold \
   --wallet.hotkey p44_validator \
-  --netuid 87 \
+  --netuid 126 \
   --subtensor.network finney
 
 # Check registration status
@@ -56,7 +56,7 @@ btcli wallet overview \
 ```bash
 pm2 start python --name poker44_validator -- \
   ./neurons/validator.py \
-  --netuid 87 \
+  --netuid 126 \
   --wallet.name p44_cold \
   --wallet.hotkey p44_validator \
   --subtensor.network finney \
