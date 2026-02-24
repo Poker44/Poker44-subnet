@@ -2,7 +2,7 @@
 
 # Poker44 Validator Startup Script
 
-NETUID=294  ## 87 if mainnet, 294 if testnet
+NETUID=294  ## 126 if mainnet, 294 if testnet
 WALLET_NAME="poker44-test-ck"
 HOTKEY="poker44-hk"
 NETWORK="test"  ## "finney" for mainnet; "test" for testnet
