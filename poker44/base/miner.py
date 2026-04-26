@@ -178,6 +178,21 @@ class BaseMinerNeuron(BaseNeuron):
             Exception: For unforeseen errors during the miner's operation, which are logged for diagnosis.
         """
 
+        if self.process_test_mode:
+            bt.logging.warning(
+                "POKER44_PROCESS_TEST_MODE enabled: starting miner axon without on-chain registration or serve_axon."
+            )
+            self.axon.start()
+            bt.logging.info(f"Process-test miner axon started on port {self.axon.port}")
+            try:
+                while not self.should_exit:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                self.axon.stop()
+                bt.logging.success("Process-test miner killed by keyboard interrupt.")
+                exit()
+            return
+
         # Check that miner is registered on the network.
         self.sync()
 

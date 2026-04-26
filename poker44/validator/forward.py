@@ -33,6 +33,45 @@ from poker44.validator.constants import (
     WINNER_TAKE_ALL,
 )
 
+def _parse_test_miner_axons() -> Tuple[List[int], List]:
+    entries_raw = str(os.getenv("POKER44_TEST_MINER_AXONS", "")).strip()
+    if not entries_raw:
+        return [], []
+
+    miner_uids: List[int] = []
+    axons: List = []
+    for raw_entry in entries_raw.split(","):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        parts = [part.strip() for part in entry.split("|")]
+        if len(parts) != 4:
+            bt.logging.warning(
+                f"Invalid POKER44_TEST_MINER_AXONS entry {entry!r}; expected uid|hotkey|ip|port."
+            )
+            continue
+        uid_raw, hotkey, ip, port_raw = parts
+        try:
+            uid = int(uid_raw)
+            port = int(port_raw)
+        except ValueError:
+            bt.logging.warning(
+                f"Invalid POKER44_TEST_MINER_AXONS entry {entry!r}; uid/port must be integers."
+            )
+            continue
+        miner_uids.append(uid)
+        axons.append(
+            bt.AxonInfo(
+                version=4,
+                ip=ip,
+                port=port,
+                ip_type=4,
+                hotkey=hotkey,
+                coldkey="",
+            )
+        )
+    return miner_uids, axons
+
 
 async def forward(validator) -> None:
     """Entry point invoked by :class:`neurons.validator.Validator`."""
@@ -492,6 +531,11 @@ def _record_compliance(
 
 
 def _get_candidate_miners(validator) -> Tuple[List[int], List]:
+    manual_uids, manual_axons = _parse_test_miner_axons()
+    if manual_uids:
+        bt.logging.info(f"Using process-test manual miner axons: {manual_uids}")
+        return manual_uids, manual_axons
+
     miner_uids: List[int] = []
     axons: List = []
     target_uids_env = os.getenv("POKER44_TARGET_MINER_UIDS", "").strip()

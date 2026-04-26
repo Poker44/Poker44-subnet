@@ -31,6 +31,10 @@ from poker44 import version_url
 from poker44 import __version__, __spec_version__
 
 
+def _env_flag(name: str) -> bool:
+    return str(os.getenv(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 class BaseNeuron(ABC):
     """
     Base class for Bittensor miners. This class is abstract and should be inherited by a subclass. It contains the core logic for all neurons; validators and miners.
@@ -66,6 +70,7 @@ class BaseNeuron(ABC):
         self.config = self.config()
         self.config.merge(base_config)
         self.check_config(self.config) 
+        self.process_test_mode = _env_flag("POKER44_PROCESS_TEST_MODE")
 
         # Version check
         self.parse_versions()
@@ -109,7 +114,12 @@ class BaseNeuron(ABC):
         self.check_registered()
 
         # Each miner gets a unique identity (UID) in the network for differentiation.
-        self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+        try:
+            self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+        except ValueError:
+            self.uid = -1 if self.process_test_mode else self.metagraph.hotkeys.index(
+                self.wallet.hotkey.ss58_address
+            )
         bt.logging.info(
             f"Running neuron on subnet: {self.config.netuid} with uid {self.uid} using network: {self.subtensor.chain_endpoint}"
         )
@@ -163,6 +173,11 @@ class BaseNeuron(ABC):
             time.sleep(5)
 
     def check_registered(self):
+        if self.process_test_mode:
+            bt.logging.warning(
+                "POKER44_PROCESS_TEST_MODE enabled: skipping on-chain hotkey registration check."
+            )
+            return
         # --- Check for registration.
         if not self.subtensor.is_hotkey_registered(
             netuid=self.config.netuid,
@@ -179,6 +194,8 @@ class BaseNeuron(ABC):
         Check if enough epoch blocks have elapsed since the last checkpoint to sync.
 
         """
+        if self.process_test_mode or self.uid < 0:
+            return False
         if self.neuron_type != "MinerNeuron":
             last_update = self.metagraph.last_update[self.uid]
         else:
@@ -192,7 +209,7 @@ class BaseNeuron(ABC):
             return False
 
         # Check if enough epoch blocks have elapsed since the last epoch.
-        if self.config.neuron.disable_set_weights:
+        if self.process_test_mode or self.config.neuron.disable_set_weights or self.uid < 0:
             return False
 
         # Define appropriate logic for when set weights.
