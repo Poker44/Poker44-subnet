@@ -38,7 +38,7 @@ The organization follows a clean entrypoint/protocol/base/client/phase separatio
 Set `POKER44_MODEL_FACTORY=your_package.module:create_model`. The factory is loaded once when the miner starts and must return an object with:
 
 ```python
-def predict_bot_risk(self, sessions: list[dict]) -> list[float]: ...
+def predict(self, sessions: list[dict]) -> list[float]: ...
 ```
 
 The output length must equal the session count. Ground-truth fields are rejected at the miner boundary. Without a factory, the bundled reference model is used for smoke testing only.
