@@ -18,6 +18,7 @@ from poker44.protocol import SessionDetectionSynapse
 from poker44.validator.evaluation.models import MinerEvaluation
 from poker44.validator.evaluation.redteam_gate import audit_redteam_leakage
 from poker44.validator.evaluation.reward import reward
+from poker44.utils.encrypted_endpoints import is_masked_axon
 
 
 class ValidatorEvaluationMixin:
@@ -45,7 +46,10 @@ class ValidatorEvaluationMixin:
             os.getenv("POKER44_TEST_FIXTURE_ALLOW_SHARED_COLDKEY", "false").lower()
             == "true"
         )
-        candidates: list[tuple[int, Any]] = []
+        resolver = getattr(self, "endpoint_resolver", None)
+        if resolver is not None:
+            self.refresh_encrypted_endpoints()
+        candidates: list[tuple[int, Any, bool]] = []
         seen_coldkeys: set[str] = set()
         seen_repositories: set[str] = set()
         for uid, axon in enumerate(self.metagraph.axons):
@@ -54,6 +58,7 @@ class ValidatorEvaluationMixin:
             if bool(self.metagraph.validator_permit[uid]):
                 continue
             override = str(overrides.get(str(uid), "")).strip()
+            protected = False
             if override:
                 host, override_port = override.rsplit(":", 1)
                 axon = replace(
@@ -61,6 +66,16 @@ class ValidatorEvaluationMixin:
                     ip=socket.gethostbyname(host),
                     port=int(override_port),
                 )
+            elif resolver is not None:
+                axon, protected = resolver.resolve(
+                    self.metagraph.hotkeys[uid],
+                    axon,
+                )
+            if is_masked_axon(axon) and not protected:
+                bt.logging.warning(
+                    f"Skipping protected miner UID {uid}: no decryptable endpoint is available."
+                )
+                continue
             ip = str(getattr(axon, "ip", "") or "")
             port = int(getattr(axon, "port", 0) or 0)
             if ip in {"", "0.0.0.0", "::", "[::]"} or port <= 0:
@@ -107,7 +122,7 @@ class ValidatorEvaluationMixin:
                 bt.logging.warning(f"Skipping uid={uid}: coldkey already represented")
                 continue
             seen_coldkeys.add(coldkey_identity)
-            candidates.append((uid, axon))
+            candidates.append((uid, axon, protected))
         validator_hotkey = str(self.wallet.hotkey.ss58_address)
         candidates.sort(
             key=lambda item: sha256(
@@ -117,9 +132,12 @@ class ValidatorEvaluationMixin:
         selected = candidates[:limit]
         bt.logging.info(
             "Selected miner axons | "
-            + ", ".join(f"uid={uid}@{axon.ip}:{axon.port}" for uid, axon in selected)
+            + ", ".join(
+                f"uid={uid}@{'protected' if protected else f'{axon.ip}:{axon.port}'}"
+                for uid, axon, protected in selected
+            )
         )
-        return [uid for uid, _ in selected], [axon for _, axon in selected]
+        return [uid for uid, _, _ in selected], [axon for _, axon, _ in selected]
 
     @staticmethod
     def _response_seconds(response: Any) -> float | None:

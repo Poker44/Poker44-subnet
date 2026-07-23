@@ -12,9 +12,16 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 MINER_SCRIPT="${MINER_SCRIPT:-./neurons/miner.py}"
 MINER_EXTRA_ARGS="${MINER_EXTRA_ARGS:-}"
 
+: "${POKER44_ENCRYPTED_AXON_ENABLED:=false}"
+: "${POKER44_ENDPOINT_PUBLIC_KEY:=}"
+: "${POKER44_AXON_EXTERNAL_IP:=}"
+: "${POKER44_AXON_EXTERNAL_PORT:=}"
+export POKER44_ENCRYPTED_AXON_ENABLED POKER44_ENDPOINT_PUBLIC_KEY
+export POKER44_AXON_EXTERNAL_IP POKER44_AXON_EXTERNAL_PORT
+
 command -v pm2 >/dev/null || { echo "pm2 is required" >&2; exit 1; }
 test -f "$MINER_SCRIPT" || { echo "Missing $MINER_SCRIPT" >&2; exit 1; }
-"$PYTHON_BIN" -c 'import bittensor, dotenv, poker44' || {
+"$PYTHON_BIN" -c 'import bittensor, dotenv, nacl, poker44' || {
   echo "Install the Poker44 runtime dependencies first" >&2; exit 1;
 }
 
@@ -43,3 +50,4 @@ pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
 pm2 start "$PYTHON_BIN" --name "$PM2_NAME" -- "${args[@]}"
 pm2 save
 echo "Started $PM2_NAME on netuid=$NETUID with $WALLET_NAME/$HOTKEY port=$AXON_PORT"
+echo "Encrypted Axon endpoint protection: $POKER44_ENCRYPTED_AXON_ENABLED"

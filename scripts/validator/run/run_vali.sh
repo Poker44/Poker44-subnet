@@ -17,13 +17,16 @@ VALIDATOR_EXTRA_ARGS="${VALIDATOR_EXTRA_ARGS:-}"
 : "${POKER44_VALIDATOR_SESSIONS_PER_ROUND:=64}"
 : "${POKER44_POLL_INTERVAL_SECONDS:=300}"
 : "${POKER44_MINERS_PER_ROUND:=32}"
+: "${POKER44_ENDPOINT_PRIVATE_KEY:=}"
+: "${POKER44_ENDPOINT_REFRESH_SECONDS:=300}"
 export POKER44_SUBNET_DATA_URL POKER44_DASHBOARD_REPORT_URL
 export POKER44_VALIDATOR_SESSIONS_PER_ROUND POKER44_POLL_INTERVAL_SECONDS
 export POKER44_MINERS_PER_ROUND
+export POKER44_ENDPOINT_PRIVATE_KEY POKER44_ENDPOINT_REFRESH_SECONDS
 
 command -v pm2 >/dev/null || { echo "pm2 is required" >&2; exit 1; }
 test -f "$VALIDATOR_SCRIPT" || { echo "Missing $VALIDATOR_SCRIPT" >&2; exit 1; }
-"$PYTHON_BIN" -c 'import bittensor, dotenv, numpy, sklearn, poker44' || {
+"$PYTHON_BIN" -c 'import bittensor, dotenv, nacl, numpy, sklearn, poker44' || {
   echo "Install the Poker44 runtime dependencies first" >&2; exit 1;
 }
 
@@ -47,3 +50,8 @@ pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
 pm2 start "$PYTHON_BIN" --name "$PM2_NAME" -- "${args[@]}"
 pm2 save
 echo "Started $PM2_NAME on netuid=$NETUID with $WALLET_NAME/$HOTKEY"
+if [[ -n "$POKER44_ENDPOINT_PRIVATE_KEY" ]]; then
+  echo "Encrypted Axon endpoint resolver: enabled"
+else
+  echo "Encrypted Axon endpoint resolver: disabled"
+fi

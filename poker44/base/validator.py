@@ -32,6 +32,10 @@ from poker44.base.utils.weight_utils import (
     convert_weights_and_uids_for_emit,
 )
 from poker44.utils.config import add_validator_args
+from poker44.utils.encrypted_endpoints import (
+    EndpointProtectionError,
+    ValidatorEndpointResolver,
+)
 from poker44.validator.settlement.weights import retain_top_scores
 
 
@@ -49,6 +53,23 @@ class BaseValidatorNeuron(BaseNeuron):
 
     def __init__(self, config=None):
         super().__init__(config=config)
+
+        try:
+            self.endpoint_resolver = ValidatorEndpointResolver.from_env(
+                subtensor=self.subtensor,
+                netuid=self.config.netuid,
+            )
+        except EndpointProtectionError as exc:
+            bt.logging.error(
+                "Encrypted Axon endpoint resolver is disabled because its "
+                f"configuration is invalid: {exc}"
+            )
+            self.endpoint_resolver = ValidatorEndpointResolver(
+                subtensor=self.subtensor,
+                netuid=self.config.netuid,
+                private_key_hex="",
+            )
+        self.refresh_encrypted_endpoints(force=True)
 
         # Save a copy of the hotkeys to local memory.
         self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)
@@ -103,6 +124,23 @@ class BaseValidatorNeuron(BaseNeuron):
         except Exception as e:
             bt.logging.error(f"Failed to create Axon initialize with exception: {e}")
             pass
+
+    def refresh_encrypted_endpoints(self, force: bool = False) -> int:
+        resolver = getattr(self, "endpoint_resolver", None)
+        if resolver is None or not resolver.enabled:
+            return 0
+        try:
+            count = resolver.refresh(self.metagraph.hotkeys, force=force)
+            bt.logging.info(
+                f"Encrypted Axon endpoint resolver active with {count} protected miner(s)."
+            )
+            return count
+        except Exception as exc:
+            bt.logging.warning(
+                "Could not refresh encrypted Axon endpoints; retaining the last "
+                f"valid resolver state: {exc}"
+            )
+            return len(resolver.protected_hotkeys)
 
     async def concurrent_forward(self):
         coroutines = [
@@ -425,6 +463,7 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Sync the metagraph.
         self.metagraph.sync(subtensor=self.subtensor)
+        self.refresh_encrypted_endpoints()
 
         # Check if the metagraph axon info has changed.
         if previous_metagraph.axons == self.metagraph.axons:
