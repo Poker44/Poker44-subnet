@@ -106,6 +106,13 @@ evaluation request and continue polling. Depending on tournament volume, the
 next window may become available in one day, three days, four days, or another
 data-dependent interval.
 
+The standard deployment profile seals a 20-session window: 10 eligible human
+sessions and 10 eligible bot sessions from at least one tournament, with bot
+family diversity enforced. With the current three-hand session collector, one
+full 20-seat tournament can therefore produce a complete evaluation window.
+Sessions still have to pass quality and telemetry checks, so registrations or
+raw dealt-hand counts alone do not guarantee readiness.
+
 ### 5. Validator lease and miner request
 
 Each validator acquires an idempotent lease for the current window. The lease
