@@ -1,11 +1,23 @@
 # Poker44 subnet
 
-Poker44 evaluates whether a poker subject session was produced by a human or a bot. A session contains M consecutive hands plus sanitized behavioral telemetry. Labels stay inside the validator; miners receive only features and return one bot-risk score per session.
+Poker44 evaluates whether a poker subject session was produced by a human or a
+bot. Sessions are now sourced from recurring poker tournaments and contain
+consecutive hands plus sanitized behavioral telemetry. Labels stay inside the
+validator; miners receive only features and return one bot-risk score per
+session.
+
+> **Tournament migration:** participant-facing competition rounds are being
+> removed. Evaluations become data-driven and run when tournaments have
+> produced enough quality-checked sessions, not on a guaranteed daily round
+> schedule. See the
+> [tournament evaluation workflow](docs/tournament-evaluation-workflow.md) for
+> the lifecycle, the miner-visible v2 payload and the model migration checklist.
 
 ## Runtime flow
 
-1. The platform records poker actions and consented browser telemetry.
-2. Platform's `subnetData` module seals a balanced, immutable window after N labelled sessions exist.
+1. Recurring tournaments record poker actions and consented browser telemetry.
+2. The platform assembles quality-checked sessions and seals a balanced,
+   immutable window only when enough comparable data exists.
 3. Each validator leases Nv sessions from that window.
 4. The validator sends the unlabelled sessions to miner axons through `SessionDetectionSynapse`.
 5. Each miner runs its own resident model and returns `risk_scores` in `[0,1]`.
@@ -41,13 +53,18 @@ Set `POKER44_MODEL_FACTORY=your_package.module:create_model`. The factory is loa
 def predict(self, sessions: list[dict]) -> list[float]: ...
 ```
 
-The output length must equal the session count. Ground-truth fields are rejected at the miner boundary. Without a factory, the bundled reference model is used for smoke testing only.
+The output length must equal the session count. Ground-truth fields are rejected
+at the miner boundary. Tournament sessions use the
+[`subject-session.v2`](contracts/subject-session.v2.schema.json) contract.
+Without a factory, the bundled reference model is used for smoke testing only.
 
 ## Validator services
 
 Required variables include `POKER44_SUBNET_DATA_URL` and
 `POKER44_VALIDATOR_SESSIONS_PER_ROUND`. `POKER44_DASHBOARD_REPORT_URL` controls
-optional signed observability delivery. See `docs/validator.md` and `docs/miner.md`.
+optional signed observability delivery. `_PER_ROUND` is a legacy configuration
+name for one validator evaluation cycle; it is not a tournament round. See
+`docs/validator.md` and `docs/miner.md`.
 
 Run tests with:
 

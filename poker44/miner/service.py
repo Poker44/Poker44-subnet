@@ -39,7 +39,10 @@ class MinerInferenceService:
     def _validate_session(session: Any, index: int) -> dict[str, Any]:
         if not isinstance(session, dict):
             raise ValueError(f"sessions[{index}] must be an object")
-        if str(session.get("schema_version") or "") != "1":
+        # Tournament-sourced sessions use the sanitized v2 contract. Keep v1
+        # readable during the migration so an already sealed legacy window does
+        # not fail solely because miners upgraded before every validator.
+        if str(session.get("schema_version") or "") not in {"1", "2"}:
             raise ValueError(f"sessions[{index}] has unsupported schema_version")
         if not str(session.get("session_id") or "").strip():
             raise ValueError(f"sessions[{index}] has no session_id")

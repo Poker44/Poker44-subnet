@@ -6,7 +6,7 @@ def test_session_synapse_has_no_ground_truth_field():
         window_id="window-1",
         sessions=[
             {
-                "schema_version": "1",
+                "schema_version": "2",
                 "session_id": "session-1",
                 "window_id": "window-1",
                 "hands": [{"actions": []}],

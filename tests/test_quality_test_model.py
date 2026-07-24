@@ -17,7 +17,7 @@ def config() -> MinerModelConfig:
 
 def session(session_id: str) -> dict:
     return {
-        "schema_version": "1",
+        "schema_version": "2",
         "session_id": session_id,
         "window_id": "window-1",
         "hands": [{"actions": [{"action_type": "raise"}]}],

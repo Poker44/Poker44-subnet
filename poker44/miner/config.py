@@ -32,7 +32,7 @@ class MinerModelConfig:
             ).strip(),
             model_path=os.getenv("POKER44_MODEL_PATH") or None,
             device=os.getenv("POKER44_MODEL_DEVICE", "cpu").strip() or "cpu",
-            version=os.getenv("POKER44_MODEL_VERSION", "reference-v1").strip()
+            version=os.getenv("POKER44_MODEL_VERSION", "reference-v2").strip()
             or "unknown",
             max_sessions_per_request=max_sessions,
             max_request_bytes=max_request_bytes,
