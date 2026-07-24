@@ -21,7 +21,10 @@ class SubnetDataConfig:
 
     @classmethod
     def from_env(cls) -> "SubnetDataConfig":
-        requested = int(os.getenv("POKER44_VALIDATOR_SESSIONS_PER_ROUND", "64"))
+        # One standard Poker44 tournament has 20 seats (10 human, 10 bot).
+        # Keep the legacy variable name during migration, but default one
+        # validator request to one complete tournament-sized window.
+        requested = int(os.getenv("POKER44_VALIDATOR_SESSIONS_PER_ROUND", "20"))
         if requested <= 0:
             raise ValueError("POKER44_VALIDATOR_SESSIONS_PER_ROUND must be positive")
         base_url = os.getenv("POKER44_SUBNET_DATA_URL", "https://api.poker44.net")

@@ -38,6 +38,11 @@ codebase, they refer to one internal evaluation cycle identified by a sealed
 `window_id`; they are not tournament stages and do not allow miners to join a
 later competition round.
 
+The default validator request is 20 sessions. This matches the standard
+20-seat tournament window configured by the platform: 10 eligible human
+sessions and 10 eligible bot sessions. The value remains configurable for
+larger future tournament profiles.
+
 The complete upstream tournament lifecycle and downstream miner contract are
 documented in
 [`docs/tournament-evaluation-workflow.md`](tournament-evaluation-workflow.md).
