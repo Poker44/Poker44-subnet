@@ -60,8 +60,18 @@ class ReferenceSessionModel:
 
         decision_mean_ms = float(summary.get("decision_mean_ms") or 0.0)
         decision_std_ms = float(summary.get("decision_std_ms") or 0.0)
-        client_events = sum(1 for event in events if event.get("source") == "client")
-        event_density = client_events / max(1, len(hands))
+        # v1 exposed telemetry ``source`` while the sanitized tournament v2
+        # contract removes it. When source is present, retain only client
+        # events; otherwise every v2 event has already crossed the allowlist.
+        sourced_events = [
+            event for event in events if isinstance(event, dict) and "source" in event
+        ]
+        interaction_events = (
+            sum(1 for event in sourced_events if event.get("source") == "client")
+            if sourced_events
+            else sum(1 for event in events if isinstance(event, dict))
+        )
+        event_density = interaction_events / max(1, len(hands))
 
         regularity = 1.0 - cls._clamp(decision_std_ms / 4000.0)
         fast_decisions = 1.0 - cls._clamp(decision_mean_ms / 5000.0)

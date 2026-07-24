@@ -9,7 +9,7 @@ from poker44.miner.service import MinerInferenceService
 
 def make_session(**overrides):
     session = {
-        "schema_version": "1",
+        "schema_version": "2",
         "session_id": "session-1",
         "window_id": "window-1",
         "hands": [{"actions": [{"action_type": "check"}]}],
@@ -18,8 +18,9 @@ def make_session(**overrides):
                 {
                     "sequence": 0,
                     "offset_ms": 10,
-                    "source": "client",
-                    "event_type": "pointer_click",
+                    "event_type": "click",
+                    "target_category": "poker_action",
+                    "value": {"button": 0},
                 }
             ],
             "summary": {"decision_mean_ms": 1200, "decision_std_ms": 100},
@@ -50,6 +51,20 @@ async def test_model_returns_one_bounded_score_per_session():
 
     assert len(scores) == 2
     assert all(0.0 <= score <= 1.0 for score in scores)
+
+
+@pytest.mark.asyncio
+async def test_model_accepts_legacy_session_protocol_v1_during_migration():
+    scores = await make_service().predict([make_session(schema_version="1")])
+
+    assert len(scores) == 1
+    assert 0.0 <= scores[0] <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_future_session_protocol_is_rejected():
+    with pytest.raises(ValueError, match="unsupported schema_version"):
+        await make_service().predict([make_session(schema_version="3")])
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,386 @@
+# Tournament evaluation workflow
+
+Poker44 is moving from scheduled competition rounds to a continuous,
+tournament-sourced evaluation pipeline. This document explains what changes,
+what remains stable, and exactly what a miner model receives.
+
+## The short version
+
+- Competition rounds disappear. A miner does not join round 1, round 2, or any
+  later tournament stage.
+- Poker tournaments run independently and continuously generate completed
+  hands plus consented interaction telemetry.
+- The platform waits until it has enough comparable, quality-checked sessions
+  to seal an evaluation window.
+- Validators query miners only when a sealed window is available. There is no
+  guaranteed daily evaluation schedule; sufficient data may be available after
+  one day or after several days.
+- A miner remains online as usual. It receives an ordered list of sanitized
+  subject sessions and returns one calibrated bot-risk score per session.
+- Ground truth remains inside the platform-to-validator lease and is removed
+  before the Bittensor synapse reaches a miner.
+
+The word `round` still appears in some internal class names, environment
+variables and lifecycle events for backward compatibility. In those places it
+means one validator evaluation cycle over a sealed window. It does **not** mean
+a competition round or a tournament stage.
+
+## End-to-end lifecycle
+
+### 1. Tournament registration
+
+Players register before the scheduled start. An individual tournament may use
+private, single-use invitations and may require a verified payout coldkey, but
+those access rules are separate from the miner protocol.
+
+Registration closes when the tournament starts:
+
+- a player who is absent is not awaited;
+- late entry is not allowed after play begins;
+- a disconnected player cannot block the tournament;
+- when an action timer expires, play continues under the table timeout rules.
+
+### 2. Tables and tournament progression
+
+The platform creates the required tables from the registered field, seats
+players, and starts all active tables. As players are eliminated, it
+automatically rebalances tables and eventually consolidates the surviving
+players at one final table. The tournament ends when the winner is determined.
+
+Table creation, rebalancing, blind progression, eliminations and final standings
+are platform concerns. A miner does not need to reproduce tournament state or
+connect to a tournament table.
+
+### 3. Session assembly
+
+The platform records durable poker actions and consented telemetry throughout
+play. It assembles a subject session only from completed hands that pass data
+quality checks. In the current tournament collector, a session contains three
+consecutive completed hands for one subject. Miners should not hardcode that
+number: session size is part of the versioned payload and may evolve.
+
+The assembler retains:
+
+- poker decisions and the game state visible at each decision;
+- relative decision and action timing;
+- sanitized, bucketed interaction events;
+- aggregate timing and activity statistics.
+
+Incomplete or low-quality chunks are not promoted into the evaluation pool.
+Internal engine fixtures, synthetic data and unverified legacy actors are also
+excluded from subnet evaluation windows.
+
+### 4. Evaluation-window readiness
+
+Completed sessions accumulate across recurring tournaments. The platform seals
+an immutable window only when its configured quality, comparability and
+diversity requirements are met. Comparable sessions use the same collector
+version and hand count. Window construction also prevents one subject from
+supplying multiple samples to the same window.
+
+This makes evaluation data-driven rather than calendar-driven:
+
+```text
+recurring tournaments
+        |
+        v
+completed hands + telemetry
+        |
+        v
+quality-checked subject sessions
+        |
+        v
+enough comparable sessions?
+   no --------> keep collecting
+   yes
+        |
+        v
+sealed evaluation window
+        |
+        v
+validator leases -> miner requests -> local rewards
+```
+
+Validators poll for an available window. If no window is ready, they send no
+evaluation request and continue polling. Depending on tournament volume, the
+next window may become available in one day, three days, four days, or another
+data-dependent interval.
+
+### 5. Validator lease and miner request
+
+Each validator acquires an idempotent lease for the current window. The lease
+contains the miner-visible payload plus labels for local scoring. Before
+constructing `SessionDetectionSynapse`, the validator separates the labels and
+sends only the ordered feature payloads.
+
+The synapse request is:
+
+```python
+SessionDetectionSynapse(
+    protocol_version="1",
+    window_id="window_...",
+    sessions=[session_0, session_1, ...],
+)
+```
+
+`protocol_version` versions the Bittensor transport. Each session has its own
+`schema_version`, currently `"2"`, which versions the feature contract.
+
+### 6. Miner inference
+
+The configured miner model receives the `sessions` list:
+
+```python
+def predict(self, sessions: list[dict]) -> list[float]:
+    ...
+```
+
+It must return one finite probability-like value for each input session, in the
+same order:
+
+```python
+[0.08, 0.71, 0.43, ...]
+```
+
+- `0.0` means strongest confidence that the session is human.
+- `1.0` means strongest confidence that the session is bot-generated.
+- Output length must equal input length.
+- Every value must be finite and within `[0, 1]`.
+
+The miner returns the values in `risk_scores`. A boolean classification alone
+is insufficient because calibration is part of validator scoring.
+
+### 7. Validator scoring and settlement
+
+The validator keeps labels locally, validates the response, computes reward,
+updates its local EMA, and submits weights on chain when cadence permits. The
+dashboard receives signed observability events only; it does not calculate or
+provide weights.
+
+An invalid response, missing response, wrong output length, non-finite value or
+out-of-range score receives zero reward for that evaluation cycle.
+
+## Miner-visible subject session v2
+
+The normative contract is
+[`contracts/subject-session.v2.schema.json`](../contracts/subject-session.v2.schema.json).
+The checked
+[`examples/subject-session.v2.json`](../examples/subject-session.v2.json)
+fixture is validated against that contract in the test suite. It is shortened
+to one hand and two telemetry events for readability:
+
+```json
+{
+  "schema_version": "2",
+  "session_id": "session_5f8ccfbf9c21854d9cd4c663",
+  "window_id": "window_1784912400000_a1b2c3d4",
+  "hands": [
+    {
+      "hand_number": 1,
+      "actions": [
+        {
+          "sequence": 0,
+          "event_type": "PLAYER_CALL",
+          "action_type": "call",
+          "phase": "PREFLOP",
+          "amount": 50,
+          "call_amount": 50,
+          "raise_to": null,
+          "is_all_in": false,
+          "pot_size": 125,
+          "current_bet": 50,
+          "player_stack": 14950,
+          "active_players": 6,
+          "seat_position": 2,
+          "position_name": "MP",
+          "community_cards": [],
+          "hole_cards": ["As", "Kd"],
+          "decision_time_ms": 1432,
+          "time_since_last_action_ms": 3761,
+          "session_offset_ms": 0
+        }
+      ]
+    }
+  ],
+  "telemetry": {
+    "events": [
+      {
+        "sequence": 0,
+        "offset_ms": 0,
+        "event_type": "pointer_move",
+        "target_category": "poker_action",
+        "value": {
+          "pointer": "mouse",
+          "x_bucket": 4,
+          "y_bucket": 6
+        }
+      },
+      {
+        "sequence": 1,
+        "offset_ms": 418,
+        "event_type": "click",
+        "target_category": "poker_action",
+        "value": {
+          "button": 0
+        }
+      }
+    ],
+    "summary": {
+      "event_count": 2,
+      "action_count": 1,
+      "duration_ms": 18421,
+      "decision_count": 1,
+      "decision_mean_ms": 1432.0,
+      "decision_std_ms": 0.0
+    }
+  }
+}
+```
+
+### Poker action fields
+
+Each hand contains an ordered `actions` list. Important fields include:
+
+| Field | Meaning |
+| --- | --- |
+| `action_type` | `fold`, `check`, `call`, `bet`, `raise`, or `all_in` |
+| `phase` | Street at the moment of the decision |
+| `amount`, `call_amount`, `raise_to` | Chip amounts describing the action |
+| `pot_size`, `current_bet`, `player_stack` | Betting context at decision time |
+| `active_players` | Players still active in the hand |
+| `seat_position`, `position_name` | Subject position for the action |
+| `community_cards`, `hole_cards` | Available card context; values may be `null` |
+| `decision_time_ms` | Time used for the decision |
+| `time_since_last_action_ms` | Gap from the preceding table action |
+| `session_offset_ms` | Relative time from the first retained action |
+
+Models must tolerate nullable and optional context. Do not assume every action
+contains card, stack, amount or timing values.
+
+### Telemetry event fields
+
+Version 2 exposes only these event types:
+
+- `click`
+- `pointer_down`
+- `pointer_move`
+- `scroll`
+- `focus_in`
+- `visibility`
+
+Raw DOM targets are reduced to `target_category`:
+
+- `poker_action`
+- `navigation`
+- `control`
+- `other`
+- `null`
+
+Raw coordinates are not exposed. Only allowlisted values such as
+`x_bucket`, `y_bucket`, `pointer`, `button` and `visible` may appear. Event
+timestamps are relative offsets; wall-clock timestamps and the original event
+source are removed.
+
+The `summary` object provides session-level activity and decision statistics.
+Miners may use raw events, summary fields, poker actions, or any combination of
+them.
+
+## Privacy and label separation
+
+The miner-visible boundary pseudonymizes `session_id` per evaluation window and
+removes cross-window and platform identifiers. Absolute action timestamps are
+replaced by `session_offset_ms`; telemetry offsets are rebased to start at zero.
+
+The following internal fields are forbidden recursively from miner payloads:
+
+- `is_bot`, `is_human`, `ground_truth`, `label`
+- `bot_family`, `capture_source`, `collector_version`
+- `simulation`, `session_index`
+- `tournament_id`, `user_id`
+- raw telemetry `source`
+
+Miners should also treat `session_id`, `window_id`, array order, hashes and
+pagination or request timing as metadata, not model features. These values are
+not stable behavioral signals and using them encourages leakage and
+overfitting.
+
+## Migration from competition rounds
+
+| Previous competition format | Tournament evaluation format |
+| --- | --- |
+| A miner could join a later competition round | There are no joinable competition rounds |
+| Evaluations followed an announced round schedule | Requests occur only when a sealed data window exists |
+| Inputs focused primarily on poker hands | Inputs are multi-hand sessions with extended action context and telemetry |
+| A round was a participant-facing competition phase | `round` in legacy code means only an internal validator evaluation cycle |
+| Models could assume the old chunk structure | Models must consume the versioned subject-session contract |
+
+The miner's operational responsibility remains the same: keep the axon
+reachable and return model predictions when queried. Miners do not register for
+data-generation tournaments unless their operators independently choose to
+participate as players in a community test.
+
+## Model adaptation checklist
+
+Before running the tournament-based release:
+
+1. Pull the latest `dev` branch.
+2. Configure `POKER44_MODEL_FACTORY=your_package.module:create_model`.
+3. Ensure the factory returns an object with `version`, `load()` and
+   `predict(sessions)`.
+4. Accept subject-session `schema_version: "2"`. The subnet boundary also
+   accepts legacy version 1 during migration.
+5. Parse a list of sessions, not a flat list of hands.
+6. Produce exactly one score per session and preserve input order.
+7. Return finite values in `[0, 1]`; do not return only class labels.
+8. Treat nullable fields, empty arrays and future additive fields defensively.
+9. Do not hardcode the current three-hands-per-session collector setting.
+10. Remove features derived from IDs, window metadata, request order or wall
+    clock.
+11. Confirm the model does not expect v1-only telemetry fields such as `source`
+    or raw `target`.
+12. Size inference for the configured session and byte limits.
+13. Run the repository tests before deployment:
+
+    ```bash
+    PYTHONPATH=. pytest -q
+    ```
+
+## Defensive feature extraction example
+
+This minimal example demonstrates shape handling, not a competitive detection
+strategy:
+
+```python
+from typing import Any
+
+
+def extract_features(session: dict[str, Any]) -> dict[str, float]:
+    hands = session.get("hands") or []
+    actions = [
+        action
+        for hand in hands
+        if isinstance(hand, dict)
+        for action in (hand.get("actions") or [])
+        if isinstance(action, dict)
+    ]
+    telemetry = session.get("telemetry") or {}
+    events = telemetry.get("events") or []
+    summary = telemetry.get("summary") or {}
+
+    decisions = [
+        float(action["decision_time_ms"])
+        for action in actions
+        if action.get("decision_time_ms") is not None
+    ]
+    return {
+        "hand_count": float(len(hands)),
+        "action_count": float(len(actions)),
+        "telemetry_event_count": float(len(events)),
+        "decision_mean_ms": float(summary.get("decision_mean_ms") or 0.0),
+        "observed_decision_count": float(len(decisions)),
+    }
+```
+
+Production models should validate their own feature assumptions, pin a model
+version, and monitor distributions across multiple evaluation windows rather
+than fitting one tournament or one window.

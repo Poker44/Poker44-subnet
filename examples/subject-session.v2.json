@@ -1,0 +1,65 @@
+{
+  "schema_version": "2",
+  "session_id": "session_5f8ccfbf9c21854d9cd4c663",
+  "window_id": "window_1784912400000_a1b2c3d4",
+  "hands": [
+    {
+      "hand_number": 1,
+      "actions": [
+        {
+          "sequence": 0,
+          "event_type": "PLAYER_CALL",
+          "action_type": "call",
+          "phase": "PREFLOP",
+          "amount": 50,
+          "call_amount": 50,
+          "raise_to": null,
+          "is_all_in": false,
+          "pot_size": 125,
+          "current_bet": 50,
+          "player_stack": 14950,
+          "active_players": 6,
+          "seat_position": 2,
+          "position_name": "MP",
+          "community_cards": [],
+          "hole_cards": ["As", "Kd"],
+          "decision_time_ms": 1432,
+          "time_since_last_action_ms": 3761,
+          "session_offset_ms": 0
+        }
+      ]
+    }
+  ],
+  "telemetry": {
+    "events": [
+      {
+        "sequence": 0,
+        "offset_ms": 0,
+        "event_type": "pointer_move",
+        "target_category": "poker_action",
+        "value": {
+          "pointer": "mouse",
+          "x_bucket": 4,
+          "y_bucket": 6
+        }
+      },
+      {
+        "sequence": 1,
+        "offset_ms": 418,
+        "event_type": "click",
+        "target_category": "poker_action",
+        "value": {
+          "button": 0
+        }
+      }
+    ],
+    "summary": {
+      "event_count": 2,
+      "action_count": 1,
+      "duration_ms": 18421,
+      "decision_count": 1,
+      "decision_mean_ms": 1432.0,
+      "decision_std_ms": 0.0
+    }
+  }
+}
