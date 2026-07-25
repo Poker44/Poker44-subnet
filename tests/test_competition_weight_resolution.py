@@ -35,7 +35,7 @@ class CompetitionWeightResolutionTests(unittest.TestCase):
         self.assertIsInstance(raw_weights, np.ndarray)
         self.assertEqual(metadata["weights_source"], "competition_settlement")
         self.assertEqual(metadata["settlement_winner_uid"], 42)
-        self.assertEqual(int(np.count_nonzero(raw_weights)), 1)
+        self.assertEqual(int(np.count_nonzero(raw_weights)), 2)
         self.assertAlmostEqual(float(raw_weights[0]), BACKEND_BURN_FRACTION, places=6)
         self.assertAlmostEqual(float(raw_weights[42]), BACKEND_KEEP_FRACTION, places=6)
         self.assertAlmostEqual(float(raw_weights.sum()), 1.0, places=6)
@@ -83,6 +83,11 @@ class CompetitionWeightResolutionTests(unittest.TestCase):
         self.assertAlmostEqual(float(raw_weights[7]), BACKEND_KEEP_FRACTION * (2.0 / 3.0), places=6)
         self.assertAlmostEqual(float(raw_weights[11]), BACKEND_KEEP_FRACTION * (1.0 / 3.0), places=6)
         self.assertAlmostEqual(float(raw_weights.sum()), 1.0, places=6)
+        self.assertAlmostEqual(
+            float(raw_weights[7] / raw_weights[11]),
+            2.0,
+            places=6,
+        )
 
     def test_falls_back_to_local_scores_when_backend_vector_is_unusable(self):
         raw_weights, metadata = _extract_competition_weight_vector(
