@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import json
 import socket
+import re
 from hashlib import sha256
 from dataclasses import replace
 from typing import Any
@@ -15,6 +16,7 @@ import numpy as np
 from poker44.platform.models import ValidationRound
 from poker44.protocol import SessionDetectionSynapse
 from poker44.validator.evaluation.models import MinerEvaluation
+from poker44.validator.evaluation.redteam_gate import audit_redteam_leakage
 from poker44.validator.evaluation.reward import reward
 
 
@@ -25,7 +27,27 @@ class ValidatorEvaluationMixin:
             overrides = json.loads(os.getenv("POKER44_AXON_OVERRIDES", "{}"))
         except json.JSONDecodeError as exc:
             raise ValueError("POKER44_AXON_OVERRIDES must be valid JSON") from exc
+        try:
+            identities = json.loads(os.getenv("POKER44_MINER_IDENTITIES_JSON", "{}"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "POKER44_MINER_IDENTITIES_JSON must be valid JSON"
+            ) from exc
+        require_identity = (
+            os.getenv("POKER44_REQUIRE_MINER_IDENTITY", "true").lower() == "true"
+        )
+        fixture_uids = {
+            int(value)
+            for value in os.getenv("POKER44_TEST_FIXTURE_UIDS", "").split(",")
+            if value.strip().isdigit()
+        }
+        allow_fixture_shared_coldkey = (
+            os.getenv("POKER44_TEST_FIXTURE_ALLOW_SHARED_COLDKEY", "false").lower()
+            == "true"
+        )
         candidates: list[tuple[int, Any]] = []
+        seen_coldkeys: set[str] = set()
+        seen_repositories: set[str] = set()
         for uid, axon in enumerate(self.metagraph.axons):
             if uid == int(self.uid):
                 continue
@@ -43,6 +65,48 @@ class ValidatorEvaluationMixin:
             port = int(getattr(axon, "port", 0) or 0)
             if ip in {"", "0.0.0.0", "::", "[::]"} or port <= 0:
                 continue
+            hotkey = str(self.metagraph.hotkeys[uid])
+            coldkey = str(self.metagraph.coldkeys[uid])
+            coldkey_identity = (
+                f"test-fixture://uid-{uid}"
+                if uid in fixture_uids and allow_fixture_shared_coldkey
+                else coldkey
+            )
+            identity = identities.get(hotkey)
+            if require_identity:
+                if uid in fixture_uids:
+                    # Explicit testnet-only fixtures exercise validator scoring
+                    # without pretending that synthetic local miners own a
+                    # public GitHub repository.
+                    repository = f"test-fixture://uid-{uid}"
+                elif not isinstance(identity, dict):
+                    bt.logging.warning(
+                        f"Skipping uid={uid}: no verified miner identity"
+                    )
+                    continue
+                else:
+                    repository = (
+                        str(identity.get("repository_url", ""))
+                        .lower()
+                        .removesuffix(".git")
+                        .rstrip("/")
+                    )
+                    commit = str(identity.get("repository_commit", "")).lower()
+                    if not re.fullmatch(
+                        r"https://github\.com/[a-z0-9_.-]+/[a-z0-9_.-]+", repository
+                    ) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+                        bt.logging.warning(
+                            f"Skipping uid={uid}: invalid GitHub repository proof"
+                        )
+                        continue
+                if repository in seen_repositories:
+                    bt.logging.warning(f"Skipping uid={uid}: repository already used")
+                    continue
+                seen_repositories.add(repository)
+            if coldkey_identity in seen_coldkeys:
+                bt.logging.warning(f"Skipping uid={uid}: coldkey already represented")
+                continue
+            seen_coldkeys.add(coldkey_identity)
             candidates.append((uid, axon))
         validator_hotkey = str(self.wallet.hotkey.ss58_address)
         candidates.sort(
@@ -68,6 +132,35 @@ class ValidatorEvaluationMixin:
     async def _run_evaluation_phase(
         self, validation_round: ValidationRound
     ) -> list[MinerEvaluation]:
+        redteam_threshold = float(os.getenv("POKER44_REDTEAM_MAX_REWARD", "0.15"))
+        redteam = audit_redteam_leakage(
+            validation_round.miner_sessions,
+            validation_round.labels,
+            threshold=redteam_threshold,
+        )
+        await self._report_event(
+            "redteam_gate_checked",
+            validation_round,
+            redteam.to_dict(),
+        )
+        enforce_redteam = (
+            os.getenv("POKER44_ENFORCE_REDTEAM_GATE", "true").lower() == "true"
+        )
+        if (
+            redteam.skipped
+            and os.getenv(
+                "POKER44_E2E_ALLOW_SINGLE_CLASS_REWARD", "false"
+            ).lower()
+            != "true"
+        ):
+            raise RuntimeError("Red-team gate requires a mixed human/bot window")
+        if enforce_redteam and not redteam.skipped and not redteam.passed:
+            raise RuntimeError(
+                "Red-team leakage gate failed: "
+                f"feature={redteam.feature} reward={redteam.reward:.6f} "
+                f"threshold={redteam.threshold:.6f}"
+            )
+
         uids, axons = self._candidate_miners(validation_round.lease.window_id)
         if not uids:
             bt.logging.warning("No reachable miner axons were found")
