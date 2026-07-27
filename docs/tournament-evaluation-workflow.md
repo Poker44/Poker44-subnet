@@ -70,13 +70,22 @@ Incomplete or low-quality chunks are not promoted into the evaluation pool.
 Internal engine fixtures, synthetic data and unverified legacy actors are also
 excluded from subnet evaluation windows.
 
+Before sealing, the platform builds the exact miner-visible representation and
+runs a shallow provenance-leak canary over payload size and telemetry-event
+cardinality. A window is withheld if one of those capture-shape features can
+separate humans from agents above the configured balanced-accuracy limit.
+Unscoped page-surface clicks are removed at this boundary; semantic control
+interactions remain available to models.
+
 ### 4. Evaluation-window readiness
 
 Completed sessions accumulate across recurring tournaments. The platform seals
 an immutable window only when its configured quality, comparability and
 diversity requirements are met. Comparable sessions use the same collector
 version and hand count. Window construction also prevents one subject from
-supplying multiple samples to the same window.
+supplying multiple samples to the same window. The standard policy additionally
+prevents the same subject from being reused in later windows, reducing identity
+memorization and repeated-player leakage.
 
 This makes evaluation data-driven rather than calendar-driven:
 
@@ -119,6 +128,11 @@ Each validator acquires an idempotent lease for the current window. The lease
 contains the miner-visible payload plus labels for local scoring. Before
 constructing `SessionDetectionSynapse`, the validator separates the labels and
 sends only the ordered feature payloads.
+
+As a second independent control, the validator fits simple one-threshold
+classifiers to miner-visible payload size and event counts before querying any
+miner. If that local red-team canary earns more than the configured reward
+limit, evaluation stops and no miner receives the window.
 
 The synapse request is:
 
@@ -346,7 +360,10 @@ Before running the tournament-based release:
 11. Confirm the model does not expect v1-only telemetry fields such as `source`
     or raw `target`.
 12. Size inference for the configured session and byte limits.
-13. Run the repository tests before deployment:
+13. Avoid classifiers based only on payload byte length or raw event volume;
+    these are monitored as provenance shortcuts and are not stable behavioral
+    features.
+14. Run the repository tests before deployment:
 
     ```bash
     PYTHONPATH=. pytest -q
