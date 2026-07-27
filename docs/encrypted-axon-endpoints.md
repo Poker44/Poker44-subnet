@@ -7,11 +7,13 @@ of miner origin IP addresses.
 
 When protection is enabled:
 
-1. the miner encrypts `hotkey|IPv4:port` with the Poker44 endpoint public key;
+1. the miner encrypts a versioned, hotkey-bound `IPv4:port` payload with the
+   Poker44 endpoint public key;
 2. the miner publishes the ciphertext through Bittensor commitment metadata;
-3. only after that publication succeeds, the miner advertises a non-routable
+3. the miner reads the finalized commitment back and requires an exact match;
+4. only after verification succeeds, the miner advertises a non-routable
    placeholder endpoint in the metagraph;
-4. updated validators decrypt the commitment and query a local copy of the Axon
+5. updated validators decrypt the commitment and query a local copy of the Axon
    using the recovered endpoint.
 
 The encrypted payload is bound to the miner hotkey. A commitment copied from a
@@ -27,9 +29,9 @@ scrubbing.
 Protection is disabled for miners unless explicitly enabled. Public miners keep
 using their existing metagraph endpoints.
 
-Validators without a configured decryption key keep their existing behavior for
-public miners. They cannot contact protected miners, so miners must not opt in
-until Poker44 confirms that the active validator set has upgraded.
+Validators without a trusted decryption key keep their existing behavior for
+public miners and skip unresolved masked endpoints. Miners must not opt in until
+Poker44 confirms that the active validator set has upgraded.
 
 If commitment publication fails, the miner keeps its public endpoint. It never
 switches to the placeholder endpoint on an unconfirmed publication.
@@ -54,14 +56,23 @@ restart.
 
 ## Validator Activation
 
-Validators receive `POKER44_ENDPOINT_PRIVATE_KEY` through the private operator
-channel. The key must be stored only in the validator environment and must
-never be committed, logged, or placed in process arguments.
+Validators automatically request the shared key through a signed endpoint. The
+provisioning response is encrypted to an ephemeral transport key, bound to the
+requesting validator hotkey and checked against the fingerprint embedded in the
+release. The resulting cache is written with owner-only permissions.
 
 ```bash
-export POKER44_ENDPOINT_PRIVATE_KEY=<privately_distributed_key>
+export POKER44_ENDPOINT_AUTO_PROVISION=true
+export POKER44_ENDPOINT_PROVISIONING_URL=https://api.poker44.net/internal/validators/runtime/endpoint-key
+export POKER44_ENDPOINT_CACHE_FILE=<owner_only_state_path>
 export POKER44_ENDPOINT_REFRESH_SECONDS=300
 ```
 
+Operators may instead configure exactly one of
+`POKER44_ENDPOINT_PRIVATE_KEY` or `POKER44_ENDPOINT_PRIVATE_KEY_FILE`. Key
+material must never be committed, logged or placed in process arguments.
+
 The resolver supports mixed public and protected miners. Commitment RPC
-failures retain the last valid endpoint cache.
+failures retain the last valid in-memory endpoint set. In v3, endpoint
+resolution happens before miner identity, repository and coldkey eligibility
+checks, so network privacy does not weaken competition-integrity policy.

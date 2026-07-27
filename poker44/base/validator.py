@@ -24,6 +24,7 @@ import argparse
 import threading
 import time
 import bittensor as bt
+from pathlib import Path
 from typing import List, Union
 from traceback import print_exception
 from poker44.base.neuron import BaseNeuron
@@ -58,6 +59,9 @@ class BaseValidatorNeuron(BaseNeuron):
             self.endpoint_resolver = ValidatorEndpointResolver.from_env(
                 subtensor=self.subtensor,
                 netuid=self.config.netuid,
+                wallet=self.wallet,
+                cache_path=Path(self.config.neuron.full_path)
+                / "encrypted_endpoint.key",
             )
         except EndpointProtectionError as exc:
             bt.logging.error(
@@ -70,6 +74,18 @@ class BaseValidatorNeuron(BaseNeuron):
                 private_key_hex="",
             )
         self.refresh_encrypted_endpoints(force=True)
+        endpoint_status = self.endpoint_resolver.public_status()
+        if endpoint_status["enabled"]:
+            bt.logging.info(
+                "Encrypted Axon resolver ready | "
+                f"key_source={endpoint_status['key_source']} "
+                f"fingerprint={endpoint_status['key_fingerprint']}"
+            )
+        elif endpoint_status["provisioning_error"]:
+            bt.logging.warning(
+                "Encrypted Axon key provisioning failed; public miners remain "
+                f"available: {endpoint_status['provisioning_error']}"
+            )
 
         # Save a copy of the hotkeys to local memory.
         self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)

@@ -19,8 +19,29 @@ Key variables:
 - `POKER44_POLL_INTERVAL_SECONDS`
 - `POKER44_DASHBOARD_REPORT_URL`
 - `POKER44_DASHBOARD_REPORT_TIMEOUT_SECONDS`
+- `POKER44_ENDPOINT_AUTO_PROVISION`
+- `POKER44_ENDPOINT_PROVISIONING_URL`
+- `POKER44_ENDPOINT_CACHE_FILE`
 
 Requests to the session service and dashboard are signed by the validator hotkey with a timestamp and one-use nonce. Dashboard failures do not alter rewards; failure to acquire or complete the evaluation lease does.
+
+## Encrypted endpoint resolution
+
+Validators resolve opted-in miners before applying the normal v3 identity,
+repository and coldkey eligibility filters. Public and protected miners can be
+evaluated in the same sealed window.
+
+By default, a validator requests the shared endpoint key from the configured
+provisioning service using a signed, nonce-protected hotkey request. The
+response is encrypted to an ephemeral transport key, bound to the requesting
+validator and checked against the release fingerprint before being cached with
+owner-only permissions. An operator may instead configure exactly one of
+`POKER44_ENDPOINT_PRIVATE_KEY` or `POKER44_ENDPOINT_PRIVATE_KEY_FILE`.
+
+If provisioning or commitment refresh fails, public miners remain available
+and the last valid protected endpoint set is retained. A masked Axon without a
+decryptable commitment is skipped rather than queried at its placeholder
+address. See [encrypted Axon endpoints](encrypted-axon-endpoints.md).
 
 ## Tournament-driven cadence
 

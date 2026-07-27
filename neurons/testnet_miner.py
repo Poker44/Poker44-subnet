@@ -3,6 +3,7 @@
 import os
 import signal
 import threading
+from types import SimpleNamespace
 from typing import Tuple
 
 import bittensor as bt
@@ -11,6 +12,10 @@ from poker44.miner.config import MinerModelConfig
 from poker44.miner.loader import load_model
 from poker44.miner.service import MinerInferenceService
 from poker44.protocol import SessionDetectionSynapse
+from poker44.utils.encrypted_endpoints import (
+    EndpointProtectionError,
+    enable_miner_endpoint_protection,
+)
 
 
 class TestnetMiner:
@@ -74,15 +79,38 @@ class TestnetMiner:
             f"hotkey={self.wallet.hotkey.ss58_address} "
             f"model={self.model.version} port={self.axon.port}"
         )
-        if os.environ.get("POKER44_SERVE_AXON_ON_CHAIN", "false").lower() == "true":
-            subtensor = bt.Subtensor(
+        serve_on_chain = (
+            os.environ.get("POKER44_SERVE_AXON_ON_CHAIN", "false").lower() == "true"
+        )
+        protection_enabled = (
+            os.environ.get("POKER44_ENCRYPTED_AXON_ENABLED", "false").lower()
+            == "true"
+        )
+        if serve_on_chain or protection_enabled:
+            self.subtensor = bt.Subtensor(
                 network=os.environ.get(
                     "POKER44_SUBTENSOR_ENDPOINT",
                     "wss://test.finney.opentensor.ai:443",
                 )
             )
-            response = subtensor.serve_axon(
-                netuid=int(os.environ.get("POKER44_NETUID", "492")),
+            netuid = int(os.environ.get("POKER44_NETUID", "492"))
+            self.config = SimpleNamespace(netuid=netuid)
+            if protection_enabled:
+                try:
+                    protected = enable_miner_endpoint_protection(self)
+                except EndpointProtectionError as exc:
+                    protected = False
+                    bt.logging.error(
+                        "Encrypted Axon endpoint was not enabled; preserving the "
+                        f"public endpoint: {exc}"
+                    )
+                if protected:
+                    bt.logging.success(
+                        "Encrypted Axon endpoint commitment verified; publishing "
+                        "the masked testnet endpoint."
+                    )
+            response = self.subtensor.serve_axon(
+                netuid=netuid,
                 axon=self.axon,
             )
             if getattr(response, "success", bool(response)) is False:

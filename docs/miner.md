@@ -22,6 +22,24 @@ factory is imported during startup so configuration errors fail fast.
 The validator checks response shape, finite values and range. Invalid or missing
 responses receive zero reward for that evaluation cycle.
 
+## Encrypted Axon endpoint
+
+Miners may opt in to encrypted endpoint commitments. The real Axon endpoint is
+published as hotkey-bound ciphertext and is replaced in the public metagraph by
+`192.0.2.1:1234` only after a finalized read-back confirms the commitment.
+Updated validators resolve the real endpoint locally.
+
+```bash
+export POKER44_ENCRYPTED_AXON_ENABLED=true
+export POKER44_AXON_EXTERNAL_IP=<public_ipv4>
+export POKER44_AXON_EXTERNAL_PORT=<axon_port>
+```
+
+The netuid 126 public key is bundled with the release. A miner moving from a
+previously exposed address should change origin IP before enabling protection.
+See [encrypted Axon endpoints](encrypted-axon-endpoints.md) for the security
+model and rollout requirements.
+
 There are no longer participant-facing competition rounds. Miners remain
 reachable and receive requests only after recurring tournaments have generated
 enough quality-checked data for a sealed window. Timing is data-dependent and

@@ -18,11 +18,17 @@ VALIDATOR_EXTRA_ARGS="${VALIDATOR_EXTRA_ARGS:-}"
 : "${POKER44_POLL_INTERVAL_SECONDS:=300}"
 : "${POKER44_MINERS_PER_ROUND:=32}"
 : "${POKER44_ENDPOINT_PRIVATE_KEY:=}"
+: "${POKER44_ENDPOINT_PRIVATE_KEY_FILE:=}"
 : "${POKER44_ENDPOINT_REFRESH_SECONDS:=300}"
+: "${POKER44_ENDPOINT_AUTO_PROVISION:=true}"
+: "${POKER44_ENDPOINT_PROVISIONING_URL:=https://api.poker44.net/internal/validators/runtime/endpoint-key}"
+: "${POKER44_ENDPOINT_CACHE_FILE:=}"
 export POKER44_SUBNET_DATA_URL POKER44_DASHBOARD_REPORT_URL
 export POKER44_VALIDATOR_SESSIONS_PER_ROUND POKER44_POLL_INTERVAL_SECONDS
 export POKER44_MINERS_PER_ROUND
-export POKER44_ENDPOINT_PRIVATE_KEY POKER44_ENDPOINT_REFRESH_SECONDS
+export POKER44_ENDPOINT_PRIVATE_KEY POKER44_ENDPOINT_PRIVATE_KEY_FILE
+export POKER44_ENDPOINT_REFRESH_SECONDS POKER44_ENDPOINT_AUTO_PROVISION
+export POKER44_ENDPOINT_PROVISIONING_URL POKER44_ENDPOINT_CACHE_FILE
 
 command -v pm2 >/dev/null || { echo "pm2 is required" >&2; exit 1; }
 test -f "$VALIDATOR_SCRIPT" || { echo "Missing $VALIDATOR_SCRIPT" >&2; exit 1; }
@@ -50,8 +56,10 @@ pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
 pm2 start "$PYTHON_BIN" --name "$PM2_NAME" -- "${args[@]}"
 pm2 save
 echo "Started $PM2_NAME on netuid=$NETUID with $WALLET_NAME/$HOTKEY"
-if [[ -n "$POKER44_ENDPOINT_PRIVATE_KEY" ]]; then
+if [[ -n "$POKER44_ENDPOINT_PRIVATE_KEY" || -n "$POKER44_ENDPOINT_PRIVATE_KEY_FILE" ]]; then
   echo "Encrypted Axon endpoint resolver: enabled"
+elif [[ "$POKER44_ENDPOINT_AUTO_PROVISION" == "true" ]]; then
+  echo "Encrypted Axon endpoint resolver: automatic signed provisioning enabled"
 else
   echo "Encrypted Axon endpoint resolver: disabled"
 fi
