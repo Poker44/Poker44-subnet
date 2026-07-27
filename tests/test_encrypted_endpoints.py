@@ -43,6 +43,56 @@ class FakeSubtensor:
         return list(self.rows)
 
 
+def test_resolver_reads_private_key_from_owner_only_file(monkeypatch, tmp_path):
+    private_key, _ = _keypair()
+    key_file = tmp_path / "endpoint.key"
+    key_file.write_text(private_key.hex(), encoding="ascii")
+    key_file.chmod(0o600)
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_ENV, raising=False)
+    monkeypatch.setenv(endpoints.PRIVATE_KEY_FILE_ENV, str(key_file))
+
+    resolver = endpoints.ValidatorEndpointResolver.from_env(
+        subtensor=FakeSubtensor([]),
+        netuid=126,
+    )
+
+    assert resolver.enabled is True
+    assert resolver.private_key == private_key
+
+
+def test_resolver_rejects_insecure_private_key_file(monkeypatch, tmp_path):
+    private_key, _ = _keypair()
+    key_file = tmp_path / "endpoint.key"
+    key_file.write_text(private_key.hex(), encoding="ascii")
+    key_file.chmod(0o644)
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_ENV, raising=False)
+    monkeypatch.setenv(endpoints.PRIVATE_KEY_FILE_ENV, str(key_file))
+
+    with pytest.raises(endpoints.EndpointProtectionError, match="group or others"):
+        endpoints.ValidatorEndpointResolver.from_env(
+            subtensor=FakeSubtensor([]),
+            netuid=126,
+        )
+
+
+def test_resolver_rejects_ambiguous_private_key_configuration(
+    monkeypatch,
+    tmp_path,
+):
+    private_key, _ = _keypair()
+    key_file = tmp_path / "endpoint.key"
+    key_file.write_text(private_key.hex(), encoding="ascii")
+    key_file.chmod(0o600)
+    monkeypatch.setenv(endpoints.PRIVATE_KEY_ENV, private_key.hex())
+    monkeypatch.setenv(endpoints.PRIVATE_KEY_FILE_ENV, str(key_file))
+
+    with pytest.raises(endpoints.EndpointProtectionError, match="only one"):
+        endpoints.ValidatorEndpointResolver.from_env(
+            subtensor=FakeSubtensor([]),
+            netuid=126,
+        )
+
+
 def test_endpoint_round_trip_is_bound_to_hotkey():
     private_key, public_key = _keypair()
     ciphertext = endpoints.encrypt_endpoint(

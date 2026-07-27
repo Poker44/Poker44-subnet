@@ -6,6 +6,7 @@ import copy
 import hashlib
 import ipaddress
 import os
+import stat
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional, Tuple
@@ -21,6 +22,7 @@ COMMITMENT_VERIFY_DELAY_SECONDS = 2.0
 PROTECTION_ENABLED_ENV = "POKER44_ENCRYPTED_AXON_ENABLED"
 PUBLIC_KEY_ENV = "POKER44_ENDPOINT_PUBLIC_KEY"
 PRIVATE_KEY_ENV = "POKER44_ENDPOINT_PRIVATE_KEY"
+PRIVATE_KEY_FILE_ENV = "POKER44_ENDPOINT_PRIVATE_KEY_FILE"
 EXTERNAL_IP_ENV = "POKER44_AXON_EXTERNAL_IP"
 EXTERNAL_PORT_ENV = "POKER44_AXON_EXTERNAL_PORT"
 REFRESH_SECONDS_ENV = "POKER44_ENDPOINT_REFRESH_SECONDS"
@@ -46,6 +48,36 @@ def _decode_key(value: str, label: str) -> bytes:
     if len(key) != 32:
         raise EndpointProtectionError(f"{label} must contain exactly 32 bytes")
     return key
+
+
+def _private_key_hex_from_env() -> str:
+    inline_key = os.getenv(PRIVATE_KEY_ENV, "").strip()
+    key_path = os.getenv(PRIVATE_KEY_FILE_ENV, "").strip()
+    if inline_key and key_path:
+        raise EndpointProtectionError(
+            f"Configure only one of {PRIVATE_KEY_ENV} or {PRIVATE_KEY_FILE_ENV}"
+        )
+    if not key_path:
+        return inline_key
+
+    try:
+        key_stat = os.stat(key_path)
+        if not stat.S_ISREG(key_stat.st_mode):
+            raise EndpointProtectionError(
+                f"{PRIVATE_KEY_FILE_ENV} must reference a regular file"
+            )
+        if stat.S_IMODE(key_stat.st_mode) & 0o077:
+            raise EndpointProtectionError(
+                f"{PRIVATE_KEY_FILE_ENV} must not be accessible by group or others"
+            )
+        with open(key_path, encoding="ascii") as key_file:
+            return key_file.read().strip()
+    except EndpointProtectionError:
+        raise
+    except (OSError, UnicodeError) as exc:
+        raise EndpointProtectionError(
+            f"{PRIVATE_KEY_FILE_ENV} could not be read"
+        ) from exc
 
 
 def _load_nacl():
@@ -323,7 +355,7 @@ class ValidatorEndpointResolver:
         return cls(
             subtensor=subtensor,
             netuid=netuid,
-            private_key_hex=os.getenv(PRIVATE_KEY_ENV, ""),
+            private_key_hex=_private_key_hex_from_env(),
             refresh_seconds=refresh_seconds,
         )
 

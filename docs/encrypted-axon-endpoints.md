@@ -77,14 +77,19 @@ restart.
 
 ## Validator Activation
 
-Validators receive `POKER44_ENDPOINT_PRIVATE_KEY` through the private operator
-channel. The key must be stored only in the validator environment and must
-never be committed, logged, or placed in process arguments.
+Validators receive the private key through the private operator channel. Store
+it in a root-readable file outside the repository; it must never be committed,
+logged, or placed in process arguments.
 
 ```bash
-export POKER44_ENDPOINT_PRIVATE_KEY=<privately_distributed_key>
+install -m 600 /secure/source/poker44-endpoint.key /etc/poker44/endpoint.key
+export POKER44_ENDPOINT_PRIVATE_KEY_FILE=/etc/poker44/endpoint.key
 export POKER44_ENDPOINT_REFRESH_SECONDS=300
 ```
+
+`POKER44_ENDPOINT_PRIVATE_KEY` remains available for compatibility, but the file
+setting is preferred because process managers can expose environment values.
+Configure only one of the two settings.
 
 The resolver supports mixed public and protected miners. Commitment RPC
 failures retain the last valid endpoint cache. Runtime reports expose only

@@ -201,11 +201,14 @@ The validator now runs only in `provider_runtime` and consumes central eval data
 Validators that have received the private endpoint key should set:
 
 ```bash
-POKER44_ENDPOINT_PRIVATE_KEY=<privately_distributed_key>
+POKER44_ENDPOINT_PRIVATE_KEY_FILE=/etc/poker44/endpoint.key
 POKER44_ENDPOINT_REFRESH_SECONDS=300
 ```
 
-The private key must never be committed or included in process arguments.
+The key file must be outside the repository, readable only by the validator
+operator (`chmod 600`), and must never be committed. The inline
+`POKER44_ENDPOINT_PRIVATE_KEY` setting remains supported for compatibility but
+must never be included in process arguments or logs.
 Without it, the validator continues evaluating public miners normally but
 cannot contact miners using encrypted endpoint commitments. See
 [Encrypted Axon Endpoints](./encrypted-axon-endpoints.md).
