@@ -23,6 +23,7 @@ import asyncio
 import argparse
 import threading
 import bittensor as bt
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from traceback import print_exception
 from poker44.base.neuron import BaseNeuron
@@ -132,6 +133,9 @@ class BaseValidatorNeuron(BaseNeuron):
             self.endpoint_resolver = ValidatorEndpointResolver.from_env(
                 subtensor=self.subtensor,
                 netuid=self.config.netuid,
+                wallet=self.wallet,
+                cache_path=Path(self.config.neuron.full_path)
+                / "endpoint-resolver.key",
             )
         except EndpointProtectionError as exc:
             bt.logging.error(

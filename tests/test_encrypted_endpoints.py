@@ -1,7 +1,11 @@
+import hashlib
+import json
+import stat
 from types import SimpleNamespace
+import urllib.error
 
 import pytest
-from nacl.public import PrivateKey
+from nacl.public import Box, PrivateKey, PublicKey
 
 from poker44.utils import encrypted_endpoints as endpoints
 
@@ -25,6 +29,56 @@ def _commitment_row(hotkey, ciphertext, block=1):
             },
         },
     )
+
+
+def _provisioning_response(
+    request,
+    *,
+    endpoint_private_key,
+    validator_hotkey,
+    key_id="test-key-v1",
+    fingerprint=None,
+):
+    request_payload = json.loads(request.data.decode("utf-8"))
+    transport_public_key = PublicKey(
+        bytes.fromhex(request_payload["transport_public_key"])
+    )
+    server_private_key = PrivateKey.generate()
+    plaintext = json.dumps(
+        {
+            "version": 1,
+            "key_id": key_id,
+            "validator_hotkey": validator_hotkey,
+            "private_key": bytes(endpoint_private_key).hex(),
+        }
+    ).encode("utf-8")
+    encrypted = Box(server_private_key, transport_public_key).encrypt(plaintext)
+    endpoint_fingerprint = hashlib.sha256(
+        bytes(endpoint_private_key.public_key)
+    ).hexdigest()[:16]
+    envelope = {
+        "version": 1,
+        "algorithm": endpoints.PROVISIONING_ALGORITHM,
+        "key_id": key_id,
+        "key_fingerprint": fingerprint or endpoint_fingerprint,
+        "server_public_key": bytes(server_private_key.public_key).hex(),
+        "nonce": bytes(encrypted.nonce).hex(),
+        "ciphertext": bytes(encrypted.ciphertext).hex(),
+    }
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limit):
+            return json.dumps({"success": True, "data": envelope}).encode("utf-8")
+
+    return Response()
 
 
 class FakeSubtensor:
@@ -91,6 +145,204 @@ def test_resolver_rejects_ambiguous_private_key_configuration(
             subtensor=FakeSubtensor([]),
             netuid=126,
         )
+
+
+def test_resolver_auto_provisions_and_caches_key(monkeypatch, tmp_path):
+    endpoint_private_key = PrivateKey.generate()
+    fingerprint = hashlib.sha256(
+        bytes(endpoint_private_key.public_key)
+    ).hexdigest()[:16]
+    wallet = SimpleNamespace(
+        hotkey=SimpleNamespace(
+            ss58_address="validator-hotkey",
+            sign=lambda _message: b"\x01\x02",
+        )
+    )
+    cache_path = tmp_path / "endpoint-resolver.key"
+    requests = []
+
+    def urlopen(request, timeout):
+        requests.append((request, timeout))
+        return _provisioning_response(
+            request,
+            endpoint_private_key=endpoint_private_key,
+            validator_hotkey="validator-hotkey",
+        )
+
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_ENV, raising=False)
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_FILE_ENV, raising=False)
+    monkeypatch.setenv(endpoints.AUTO_PROVISION_ENV, "true")
+    monkeypatch.setenv(
+        endpoints.PROVISIONING_URL_ENV,
+        "https://api.example.test/internal/validators/runtime/endpoint-key",
+    )
+    monkeypatch.setitem(
+        endpoints.EXPECTED_PROVISIONED_KEY_FINGERPRINTS,
+        126,
+        fingerprint,
+    )
+    monkeypatch.setattr(endpoints.urllib.request, "urlopen", urlopen)
+
+    resolver = endpoints.ValidatorEndpointResolver.from_env(
+        subtensor=FakeSubtensor([]),
+        netuid=126,
+        wallet=wallet,
+        cache_path=cache_path,
+    )
+
+    assert resolver.enabled is True
+    assert resolver.private_key == bytes(endpoint_private_key)
+    assert resolver.key_source == "provisioned:test-key-v1"
+    assert resolver.provisioning_error == ""
+    assert cache_path.read_text(encoding="ascii").strip() == bytes(
+        endpoint_private_key
+    ).hex()
+    assert stat.S_IMODE(cache_path.stat().st_mode) == 0o600
+    assert len(requests) == 1
+    request, timeout = requests[0]
+    assert timeout == 5.0
+    assert request.get_header("X-validator-hotkey") == "validator-hotkey"
+    assert request.get_header("X-validator-signature") == "0102"
+
+
+def test_resolver_uses_secure_cache_when_provisioning_is_unavailable(
+    monkeypatch,
+    tmp_path,
+):
+    endpoint_private_key = PrivateKey.generate()
+    fingerprint = hashlib.sha256(
+        bytes(endpoint_private_key.public_key)
+    ).hexdigest()[:16]
+    cache_path = tmp_path / "endpoint-resolver.key"
+    cache_path.write_text(bytes(endpoint_private_key).hex(), encoding="ascii")
+    cache_path.chmod(0o600)
+    wallet = SimpleNamespace(
+        hotkey=SimpleNamespace(
+            ss58_address="validator-hotkey",
+            sign=lambda _message: b"\x01",
+        )
+    )
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_ENV, raising=False)
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_FILE_ENV, raising=False)
+    monkeypatch.setenv(endpoints.AUTO_PROVISION_ENV, "true")
+    monkeypatch.setitem(
+        endpoints.EXPECTED_PROVISIONED_KEY_FINGERPRINTS,
+        126,
+        fingerprint,
+    )
+    monkeypatch.setattr(
+        endpoints.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            urllib.error.URLError("offline")
+        ),
+    )
+
+    resolver = endpoints.ValidatorEndpointResolver.from_env(
+        subtensor=FakeSubtensor([]),
+        netuid=126,
+        wallet=wallet,
+        cache_path=cache_path,
+    )
+
+    assert resolver.enabled is True
+    assert resolver.private_key == bytes(endpoint_private_key)
+    assert resolver.key_source == "cache"
+    assert resolver.provisioning_error == "Provisioning server could not be reached"
+
+
+def test_resolver_rejects_insecure_provisioning_cache(monkeypatch, tmp_path):
+    endpoint_private_key = PrivateKey.generate()
+    cache_path = tmp_path / "endpoint-resolver.key"
+    cache_path.write_text(bytes(endpoint_private_key).hex(), encoding="ascii")
+    cache_path.chmod(0o644)
+    wallet = SimpleNamespace(
+        hotkey=SimpleNamespace(
+            ss58_address="validator-hotkey",
+            sign=lambda _message: b"\x01",
+        )
+    )
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_ENV, raising=False)
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_FILE_ENV, raising=False)
+    monkeypatch.setenv(endpoints.AUTO_PROVISION_ENV, "true")
+    monkeypatch.setattr(
+        endpoints.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            urllib.error.URLError("offline")
+        ),
+    )
+
+    resolver = endpoints.ValidatorEndpointResolver.from_env(
+        subtensor=FakeSubtensor([]),
+        netuid=126,
+        wallet=wallet,
+        cache_path=cache_path,
+    )
+
+    assert resolver.enabled is False
+    assert resolver.key_source == "disabled"
+
+
+def test_resolver_rejects_untrusted_provisioned_fingerprint(monkeypatch, tmp_path):
+    endpoint_private_key = PrivateKey.generate()
+    wallet = SimpleNamespace(
+        hotkey=SimpleNamespace(
+            ss58_address="validator-hotkey",
+            sign=lambda _message: b"\x01",
+        )
+    )
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_ENV, raising=False)
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_FILE_ENV, raising=False)
+    monkeypatch.setenv(endpoints.AUTO_PROVISION_ENV, "true")
+    monkeypatch.setitem(
+        endpoints.EXPECTED_PROVISIONED_KEY_FINGERPRINTS,
+        126,
+        "0000000000000000",
+    )
+    monkeypatch.setattr(
+        endpoints.urllib.request,
+        "urlopen",
+        lambda request, timeout: _provisioning_response(
+            request,
+            endpoint_private_key=endpoint_private_key,
+            validator_hotkey="validator-hotkey",
+        ),
+    )
+
+    resolver = endpoints.ValidatorEndpointResolver.from_env(
+        subtensor=FakeSubtensor([]),
+        netuid=126,
+        wallet=wallet,
+        cache_path=tmp_path / "endpoint-resolver.key",
+    )
+
+    assert resolver.enabled is False
+    assert resolver.key_source == "disabled"
+    assert "fingerprint" in resolver.provisioning_error
+
+
+def test_configured_private_key_skips_auto_provisioning(monkeypatch, tmp_path):
+    private_key, _ = _keypair()
+    monkeypatch.setenv(endpoints.PRIVATE_KEY_ENV, private_key.hex())
+    monkeypatch.delenv(endpoints.PRIVATE_KEY_FILE_ENV, raising=False)
+    monkeypatch.setattr(
+        endpoints.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("manual configuration must take precedence")
+        ),
+    )
+
+    resolver = endpoints.ValidatorEndpointResolver.from_env(
+        subtensor=FakeSubtensor([]),
+        netuid=126,
+        wallet=SimpleNamespace(),
+        cache_path=tmp_path / "unused.key",
+    )
+
+    assert resolver.enabled is True
+    assert resolver.key_source == "configured"
 
 
 def test_endpoint_round_trip_is_bound_to_hotkey():
@@ -264,6 +516,8 @@ def test_resolver_keeps_cache_when_commitment_iteration_fails():
         "protected_miners": 1,
         "last_refresh_succeeded": False,
         "last_refresh_error": "RuntimeError",
+        "key_source": "configured",
+        "provisioning_error": "",
     }
 
 

@@ -32,6 +32,8 @@ POKER44_PROVIDER_VALIDATOR_ID="${POKER44_PROVIDER_VALIDATOR_ID:-}"
 POKER44_ENDPOINT_PRIVATE_KEY="${POKER44_ENDPOINT_PRIVATE_KEY:-}"
 POKER44_ENDPOINT_PRIVATE_KEY_FILE="${POKER44_ENDPOINT_PRIVATE_KEY_FILE:-}"
 POKER44_ENDPOINT_REFRESH_SECONDS="${POKER44_ENDPOINT_REFRESH_SECONDS:-300}"
+POKER44_ENDPOINT_AUTO_PROVISION="${POKER44_ENDPOINT_AUTO_PROVISION:-true}"
+POKER44_ENDPOINT_PROVISIONING_URL="${POKER44_ENDPOINT_PROVISIONING_URL:-https://api.poker44.net/internal/validators/runtime/endpoint-key}"
 
 if [ -x "$VALIDATOR_ENV_DIR/bin/python" ]; then
     PYTHON_BIN="$VALIDATOR_ENV_DIR/bin/python"
@@ -96,6 +98,8 @@ export POKER44_PROVIDER_VALIDATOR_ID="$POKER44_PROVIDER_VALIDATOR_ID"
 export POKER44_ENDPOINT_PRIVATE_KEY
 export POKER44_ENDPOINT_PRIVATE_KEY_FILE
 export POKER44_ENDPOINT_REFRESH_SECONDS
+export POKER44_ENDPOINT_AUTO_PROVISION
+export POKER44_ENDPOINT_PROVISIONING_URL
 export PM2_NAME="$PM2_NAME"
 export VALIDATOR_ENV_DIR="$VALIDATOR_ENV_DIR"
 
@@ -139,6 +143,8 @@ echo "Runtime extras: wallet_path=${WALLET_PATH:-<default>} extra_args=${VALIDAT
 echo "Profile: runtime_mode=$POKER44_RUNTIME_MODE chunks=backend_controlled reward_window=backend_controlled poll_interval_s=$POKER44_POLL_INTERVAL_SECONDS miners_per_cycle=$POKER44_MINERS_PER_CYCLE timeout_s=$NEURON_TIMEOUT miner_query_timeout_s=$POKER44_MINER_QUERY_TIMEOUT_SECONDS"
 if [ -n "$POKER44_ENDPOINT_PRIVATE_KEY" ] || [ -n "$POKER44_ENDPOINT_PRIVATE_KEY_FILE" ]; then
   echo "Encrypted Axon endpoint resolver: enabled"
+elif [ "$POKER44_ENDPOINT_AUTO_PROVISION" = "true" ]; then
+  echo "Encrypted Axon endpoint resolver: automatic signed provisioning enabled"
 else
   echo "Encrypted Axon endpoint resolver: disabled"
 fi

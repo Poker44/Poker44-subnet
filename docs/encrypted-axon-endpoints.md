@@ -105,9 +105,19 @@ completed.
 
 ## Validator Activation
 
-Validators receive the private key through the private operator channel. Store
-it in a root-readable file outside the repository; it must never be committed,
-logged, or placed in process arguments.
+Updated validators provision the resolver key automatically. Each validator
+generates an ephemeral Curve25519 transport key and signs the provisioning
+request with its Bittensor hotkey. The backend requires current validator
+permit/stake plus Poker44's explicit scoring-validator allowlist, rejects replay,
+and returns the resolver key only inside a transport-key-encrypted envelope.
+
+The validator verifies the release fingerprint before accepting the key and
+stores an atomic owner-only cache in its neuron state directory. A backend
+outage therefore does not remove an already provisioned validator's ability to
+resolve protected miners.
+
+No operator key installation is required. The previous file configuration
+remains available as an override:
 
 ```bash
 install -m 600 /secure/source/poker44-endpoint.key /etc/poker44/endpoint.key
@@ -121,5 +131,6 @@ Configure only one of the two settings.
 
 The resolver supports mixed public and protected miners. Commitment RPC
 failures retain the last valid endpoint cache. Runtime reports expose only
-resolver readiness, the public-key fingerprint, refresh status, and protected
-miner count; they never expose endpoint addresses or private-key material.
+resolver readiness, key source, the public-key fingerprint, refresh status, and
+protected miner count; they never expose endpoint addresses or private-key
+material.

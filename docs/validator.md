@@ -198,7 +198,20 @@ The validator now runs only in `provider_runtime` and consumes central eval data
 
 ## Required Environment
 
-Validators that have received the private endpoint key should set:
+Endpoint resolver keys are provisioned automatically by default. The validator
+signs a one-time request with its hotkey, receives a Curve25519-encrypted key
+envelope, verifies the trusted release fingerprint, and stores an owner-only
+cache in its neuron state directory. No key configuration is required from the
+validator operator.
+
+Automatic provisioning can be disabled explicitly:
+
+```bash
+POKER44_ENDPOINT_AUTO_PROVISION=false
+```
+
+The previous owner-only file setting remains available as an operational
+override:
 
 ```bash
 POKER44_ENDPOINT_PRIVATE_KEY_FILE=/etc/poker44/endpoint.key
@@ -209,9 +222,10 @@ The key file must be outside the repository, readable only by the validator
 operator (`chmod 600`), and must never be committed. The inline
 `POKER44_ENDPOINT_PRIVATE_KEY` setting remains supported for compatibility but
 must never be included in process arguments or logs.
-Without it, the validator continues evaluating public miners normally but
-cannot contact miners using encrypted endpoint commitments. See
-[Encrypted Axon Endpoints](./encrypted-axon-endpoints.md).
+If provisioning and the secure cache are both unavailable, the validator
+continues evaluating public miners normally but cannot contact miners using
+encrypted endpoint commitments. See [Encrypted Axon
+Endpoints](./encrypted-axon-endpoints.md).
 
 Required for production:
 
