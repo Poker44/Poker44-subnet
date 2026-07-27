@@ -66,6 +66,7 @@ class Validator(
         )
 
     async def forward(self) -> None:
+        await self._reconcile_pending_weight_reveals()
         validation_round = await self._start_validation_round()
         if validation_round is None:
             await asyncio.sleep(self.poll_interval)

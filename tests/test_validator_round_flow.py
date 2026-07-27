@@ -42,6 +42,7 @@ async def test_round_flows_from_platform_lease_through_rewards_and_weights():
             complete=Mock(side_effect=lambda *_: calls.append("complete_round")),
             fail=Mock(),
         ),
+        _reconcile_pending_weight_reveals=AsyncMock(),
         _report_event=AsyncMock(),
     )
     validator._start_validation_round = AsyncMock(
@@ -86,6 +87,7 @@ async def test_failed_round_reports_backoff_and_terminal_state():
     validator = SimpleNamespace(
         poll_interval=0,
         round_manager=SimpleNamespace(fail=Mock(return_value=None)),
+        _reconcile_pending_weight_reveals=AsyncMock(),
         _start_validation_round=AsyncMock(return_value=validation_round),
         _run_evaluation_phase=AsyncMock(side_effect=RuntimeError("miner failure")),
         _report_event=AsyncMock(),

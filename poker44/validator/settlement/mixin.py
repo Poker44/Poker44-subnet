@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+from pathlib import Path
+from types import SimpleNamespace
 
 import bittensor as bt
 import numpy as np
@@ -14,6 +17,58 @@ from poker44.validator.settlement.weights import weight_rows
 
 
 class ValidatorSettlementMixin:
+    def _pending_reveal_state_path(self) -> Path:
+        configured = os.getenv("POKER44_PENDING_REVEALS_PATH", "").strip()
+        if configured:
+            return Path(configured).expanduser()
+        return Path(self.config.neuron.full_path) / "pending_weight_reveals.json"
+
+    def _load_pending_reveal_reports(self) -> list[dict]:
+        path = self._pending_reveal_state_path()
+        if not path.exists():
+            return []
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(value, list):
+                raise ValueError("pending reveal state must be a list")
+            return [item for item in value if isinstance(item, dict)]
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            bt.logging.warning(f"Could not read pending weight reveal state: {exc}")
+            return []
+
+    def _save_pending_reveal_reports(self, reports: list[dict]) -> None:
+        path = self._pending_reveal_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f"{path.suffix}.tmp")
+        temporary.write_text(
+            json.dumps(reports, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        temporary.chmod(0o600)
+        temporary.replace(path)
+
+    def _record_pending_reveal(
+        self,
+        validation_round: ValidationRound,
+        weights: list[dict],
+        evidence: dict,
+    ) -> None:
+        reports = self._load_pending_reveal_reports()
+        record = {
+            "round_id": validation_round.round_id,
+            "weights": weights,
+            "commit_block": int(evidence["commit_block"]),
+            "reveal_round": int(evidence["reveal_round"]),
+        }
+        key = (record["commit_block"], record["reveal_round"])
+        reports = [
+            item
+            for item in reports
+            if (item.get("commit_block"), item.get("reveal_round")) != key
+        ]
+        reports.append(record)
+        self._save_pending_reveal_reports(reports)
+
     async def _pending_weight_commits(self) -> list[dict]:
         commits = await asyncio.to_thread(
             self.subtensor.get_timelocked_weight_commits, self.config.netuid
@@ -27,6 +82,49 @@ class ValidatorSettlementMixin:
             for hotkey, commit_block, _ciphertext, reveal_round in commits
             if str(hotkey) == self.wallet.hotkey.ss58_address
         ]
+
+    async def _weight_update_visible_after(self, commit_block: int) -> bool:
+        metagraph = await asyncio.to_thread(
+            self.subtensor.metagraph, self.config.netuid
+        )
+        hotkey = self.wallet.hotkey.ss58_address
+        try:
+            uid = list(metagraph.hotkeys).index(hotkey)
+        except ValueError:
+            return False
+        return int(metagraph.last_update[uid]) > int(commit_block)
+
+    async def _reconcile_pending_weight_reveals(self) -> None:
+        reports = self._load_pending_reveal_reports()
+        if not reports:
+            return
+        pending = {
+            (item["commit_block"], item["reveal_round"])
+            for item in await self._pending_weight_commits()
+        }
+        remaining: list[dict] = []
+        for report in reports:
+            key = (int(report["commit_block"]), int(report["reveal_round"]))
+            if key in pending or not await self._weight_update_visible_after(key[0]):
+                remaining.append(report)
+                continue
+            await self._report_event(
+                "weights_revealed",
+                SimpleNamespace(round_id=str(report["round_id"])),
+                {
+                    "weights": report["weights"],
+                    "commit_reveal": True,
+                    "commit_block": key[0],
+                    "reveal_round": key[1],
+                    "chain_state": "weights_visible",
+                    "finalized_scope": "weights",
+                },
+            )
+            bt.logging.info(
+                "Committed weights are now visible on-chain | "
+                f"round={report['round_id']} commit_block={key[0]}"
+            )
+        self._save_pending_reveal_reports(remaining)
 
     async def _wait_for_testnet_weight_rate_limit(self) -> None:
         """Wait for the chain cadence when a test validation_round forces submission."""
@@ -101,6 +199,7 @@ class ValidatorSettlementMixin:
                     )
                 evidence.update(new_commits[-1])
                 evidence["chain_state"] = "committed_pending_reveal"
+                self._record_pending_reveal(validation_round, weights, evidence)
             else:
                 evidence["chain_state"] = "weights_visible"
             await self._report_event(
