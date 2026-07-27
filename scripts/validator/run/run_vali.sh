@@ -29,6 +29,8 @@ POKER44_MIN_HANDS_PER_CHUNK="${POKER44_MIN_HANDS_PER_CHUNK:-100}"
 POKER44_MAX_HANDS_PER_CHUNK="${POKER44_MAX_HANDS_PER_CHUNK:-100}"
 POKER44_PROVIDER_ATTEMPT_PUBLISH_CURRENT="${POKER44_PROVIDER_ATTEMPT_PUBLISH_CURRENT:-true}"
 POKER44_PROVIDER_VALIDATOR_ID="${POKER44_PROVIDER_VALIDATOR_ID:-}"
+POKER44_ENDPOINT_PRIVATE_KEY="${POKER44_ENDPOINT_PRIVATE_KEY:-}"
+POKER44_ENDPOINT_REFRESH_SECONDS="${POKER44_ENDPOINT_REFRESH_SECONDS:-300}"
 
 if [ -x "$VALIDATOR_ENV_DIR/bin/python" ]; then
     PYTHON_BIN="$VALIDATOR_ENV_DIR/bin/python"
@@ -66,7 +68,7 @@ if ! command -v pm2 &> /dev/null; then
     exit 1
 fi
 
-if ! "$PYTHON_BIN" -c "import bittensor, dotenv, numpy, pandas, sklearn" >/dev/null 2>&1; then
+if ! "$PYTHON_BIN" -c "import bittensor, dotenv, nacl, numpy, pandas, sklearn" >/dev/null 2>&1; then
     echo "Error: Python environment is missing required packages for validator startup."
     echo "Checked interpreter: $PYTHON_BIN"
     echo "Run ./scripts/validator/main/setup.sh or fix the virtualenv before starting PM2."
@@ -90,6 +92,8 @@ export POKER44_MIN_HANDS_PER_CHUNK="$POKER44_MIN_HANDS_PER_CHUNK"
 export POKER44_MAX_HANDS_PER_CHUNK="$POKER44_MAX_HANDS_PER_CHUNK"
 export POKER44_PROVIDER_ATTEMPT_PUBLISH_CURRENT="$POKER44_PROVIDER_ATTEMPT_PUBLISH_CURRENT"
 export POKER44_PROVIDER_VALIDATOR_ID="$POKER44_PROVIDER_VALIDATOR_ID"
+export POKER44_ENDPOINT_PRIVATE_KEY
+export POKER44_ENDPOINT_REFRESH_SECONDS
 export PM2_NAME="$PM2_NAME"
 export VALIDATOR_ENV_DIR="$VALIDATOR_ENV_DIR"
 
@@ -131,6 +135,11 @@ echo "Config: netuid=$NETUID network=$NETWORK wallet=$WALLET_NAME hotkey=$HOTKEY
 echo "Subtensor args: ${SUBTENSOR_PARAM:---subtensor.network $NETWORK}"
 echo "Runtime extras: wallet_path=${WALLET_PATH:-<default>} extra_args=${VALIDATOR_EXTRA_ARGS:-<none>}"
 echo "Profile: runtime_mode=$POKER44_RUNTIME_MODE chunks=backend_controlled reward_window=backend_controlled poll_interval_s=$POKER44_POLL_INTERVAL_SECONDS miners_per_cycle=$POKER44_MINERS_PER_CYCLE timeout_s=$NEURON_TIMEOUT miner_query_timeout_s=$POKER44_MINER_QUERY_TIMEOUT_SECONDS"
+if [ -n "$POKER44_ENDPOINT_PRIVATE_KEY" ]; then
+  echo "Encrypted Axon endpoint resolver: enabled"
+else
+  echo "Encrypted Axon endpoint resolver: disabled"
+fi
 if [ "$POKER44_RUNTIME_MODE" = "provider_runtime" ]; then
   echo "Provider runtime: eval_api=$POKER44_EVAL_API_BASE_URL request_timeout_s=$POKER44_PROVIDER_REQUEST_TIMEOUT_SECONDS min_eval_hands=$POKER44_PROVIDER_MIN_EVAL_HANDS max_eval_hands=$POKER44_PROVIDER_MAX_EVAL_HANDS min_hands_per_chunk=$POKER44_MIN_HANDS_PER_CHUNK max_hands_per_chunk=$POKER44_MAX_HANDS_PER_CHUNK attempt_publish_current=$POKER44_PROVIDER_ATTEMPT_PUBLISH_CURRENT"
   echo "Provider source: central platform backend validator_id=${POKER44_PROVIDER_VALIDATOR_ID:-<wallet hotkey>}"

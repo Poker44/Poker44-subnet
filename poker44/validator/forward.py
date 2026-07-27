@@ -24,6 +24,7 @@ from poker44.validator.integrity import (
 )
 from poker44.validator.synapse import DetectionSynapse
 from poker44.validator.payload_view import prepare_hand_for_miner
+from poker44.utils.encrypted_endpoints import is_masked_axon
 
 from poker44.validator.constants import (
     BURN_EMISSIONS,
@@ -512,9 +513,9 @@ def _get_candidate_miners(validator) -> Tuple[List[int], List]:
     axons: List = []
     target_uids_env = os.getenv("POKER44_TARGET_MINER_UIDS", "").strip()
     miners_per_cycle_env = os.getenv("POKER44_MINERS_PER_CYCLE", "16").strip()
-    min_validator_stake_env = os.getenv("POKER44_MIN_VALIDATOR_STAKE", "17000").strip()
+    min_validator_stake_env = os.getenv("POKER44_MIN_VALIDATOR_STAKE", "10000").strip()
     miners_per_cycle = 16
-    min_validator_stake = 17000.0
+    min_validator_stake = 10000.0
     target_uids = None
     if target_uids_env:
         try:
@@ -540,9 +541,18 @@ def _get_candidate_miners(validator) -> Tuple[List[int], List]:
         min_validator_stake = float(min_validator_stake_env)
     except ValueError:
         bt.logging.warning(
-            f"Invalid POKER44_MIN_VALIDATOR_STAKE={min_validator_stake_env!r}; defaulting to 17000."
+            f"Invalid POKER44_MIN_VALIDATOR_STAKE={min_validator_stake_env!r}; defaulting to 10000."
         )
-        min_validator_stake = 17000.0
+        min_validator_stake = 10000.0
+
+    resolver = getattr(validator, "endpoint_resolver", None)
+    if resolver is not None:
+        try:
+            validator.refresh_encrypted_endpoints()
+        except Exception as exc:
+            bt.logging.warning(
+                f"Encrypted Axon endpoint refresh failed; using cached/public endpoints: {exc}"
+            )
 
     for uid, axon in enumerate(validator.metagraph.axons):
         if uid == UID_ZERO:
@@ -555,6 +565,14 @@ def _get_candidate_miners(validator) -> Tuple[List[int], List]:
         except Exception:
             stake = 0.0
         if bool(validator.metagraph.validator_permit[uid]) and stake >= min_validator_stake:
+            continue
+        resolved = False
+        if resolver is not None:
+            axon, resolved = resolver.resolve(validator.metagraph.hotkeys[uid], axon)
+        if is_masked_axon(axon) and not resolved:
+            bt.logging.warning(
+                f"Skipping protected miner UID {uid}: no decryptable endpoint is available."
+            )
             continue
         ip = str(getattr(axon, "ip", "") or "")
         port = int(getattr(axon, "port", 0) or 0)

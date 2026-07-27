@@ -69,6 +69,16 @@ class ValidatorRuntimeSmokeGuardTests(unittest.TestCase):
             self.assertEqual(payload["runtime_mode"], "initializing")
             self.assertEqual(payload["validator_uid"], 74)
             self.assertEqual(payload["audit"]["provider"], "none")
+            self.assertEqual(
+                payload["encrypted_axon"],
+                {
+                    "enabled": False,
+                    "key_fingerprint": "",
+                    "protected_miners": 0,
+                    "last_refresh_succeeded": None,
+                    "last_refresh_error": "",
+                },
+            )
 
 
 if __name__ == "__main__":

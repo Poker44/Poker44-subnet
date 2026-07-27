@@ -193,6 +193,27 @@ Before using the script, set at least:
 If `ALLOWED_VALIDATOR_HOTKEYS` is empty, the script falls back to
 `--blacklist.force_validator_permit`.
 
+## Optional Encrypted Axon Endpoint
+
+Poker44 can hide an opted-in miner origin from the public metagraph by
+publishing a hotkey-bound encrypted endpoint commitment. Do not activate this
+until Poker44 confirms that the active validators support protected endpoints.
+
+```bash
+POKER44_ENCRYPTED_AXON_ENABLED=true \
+POKER44_AXON_EXTERNAL_IP=<new_public_ipv4> \
+POKER44_AXON_EXTERNAL_PORT=8091 \
+WALLET_NAME=my_cold \
+HOTKEY=my_poker44_hotkey \
+AXON_PORT=8091 \
+./scripts/miner/run/run_miner.sh
+```
+
+If publication is not confirmed, the miner keeps its public endpoint to avoid
+losing validator connectivity. See
+[Encrypted Axon Endpoints](./encrypted-axon-endpoints.md) for the rollout and
+security model.
+
 Direct CLI example:
 
 ```bash

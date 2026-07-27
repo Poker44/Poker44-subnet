@@ -175,6 +175,18 @@ class Validator(BaseValidatorNeuron):
             if hasattr(self, "provider") and hasattr(self.provider, "stats")
             else {}
         )
+        endpoint_resolver = getattr(self, "endpoint_resolver", None)
+        endpoint_status = {
+            "enabled": False,
+            "key_fingerprint": "",
+            "protected_miners": 0,
+            "last_refresh_succeeded": None,
+            "last_refresh_error": "",
+        }
+        if endpoint_resolver is not None:
+            public_status = getattr(endpoint_resolver, "public_status", None)
+            if callable(public_status):
+                endpoint_status = public_status()
         payload = {
             "status": status,
             "validator_uid": self.resolve_uid(self.wallet.hotkey.ss58_address),
@@ -202,6 +214,7 @@ class Validator(BaseValidatorNeuron):
             "active_chunk_hash": provider_stats.get("active_chunk_hash"),
             "competition_scores": list(getattr(self, "competition_scores_payload", []) or []),
             "audit": dict(getattr(self, "audit_summary", {}) or {}),
+            "encrypted_axon": endpoint_status,
             "runtime": self.runtime_info,
         }
         if extra:

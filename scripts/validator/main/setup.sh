@@ -160,7 +160,7 @@ PY
 
 verify_installation() {
   info_msg "Verifying validator environment setup..."
-  python -c "import bittensor, dotenv, numpy, pandas, sklearn; print(f'✓ Bittensor: {bittensor.__version__}')" \
+  python -c "import bittensor, dotenv, nacl, numpy, pandas, sklearn; print(f'✓ Bittensor: {bittensor.__version__}')" \
     || handle_error "Environment verification failed. Required Python packages are not importable."
   success_msg "Installation verification completed."
 }

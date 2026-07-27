@@ -10,6 +10,10 @@ MINER_SCRIPT="${MINER_SCRIPT:-./neurons/miner.py}"
 PM2_NAME="${PM2_NAME:-poker44_miner}"  ##  name of Miner, as you wish
 AXON_PORT="${AXON_PORT:-8091}"
 ALLOWED_VALIDATOR_HOTKEYS="${ALLOWED_VALIDATOR_HOTKEYS:-}"
+POKER44_ENCRYPTED_AXON_ENABLED="${POKER44_ENCRYPTED_AXON_ENABLED:-false}"
+POKER44_ENDPOINT_PUBLIC_KEY="${POKER44_ENDPOINT_PUBLIC_KEY:-}"
+POKER44_AXON_EXTERNAL_IP="${POKER44_AXON_EXTERNAL_IP:-}"
+POKER44_AXON_EXTERNAL_PORT="${POKER44_AXON_EXTERNAL_PORT:-$AXON_PORT}"
 
 if [ ! -f "$MINER_SCRIPT" ]; then
     echo "Error: Miner script not found at $MINER_SCRIPT"
@@ -24,6 +28,10 @@ fi
 pm2 delete $PM2_NAME 2>/dev/null || true
 
 export PYTHONPATH="$(pwd)"
+export POKER44_ENCRYPTED_AXON_ENABLED
+export POKER44_ENDPOINT_PUBLIC_KEY
+export POKER44_AXON_EXTERNAL_IP
+export POKER44_AXON_EXTERNAL_PORT
 
 MINER_ARGS=(
   --netuid "$NETUID"
@@ -55,3 +63,4 @@ if [ -n "$ALLOWED_VALIDATOR_HOTKEYS" ]; then
 else
     echo "Access mode: validator_permit fallback"
 fi
+echo "Encrypted Axon endpoint enabled: $POKER44_ENCRYPTED_AXON_ENABLED"
