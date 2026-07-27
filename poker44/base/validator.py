@@ -55,13 +55,16 @@ class BaseValidatorNeuron(BaseNeuron):
     def __init__(self, config=None):
         super().__init__(config=config)
 
+        self._endpoint_cache_path = (
+            Path(self.config.neuron.full_path) / "encrypted_endpoint.key"
+        )
+        self._endpoint_provision_retry_at = 0.0
         try:
             self.endpoint_resolver = ValidatorEndpointResolver.from_env(
                 subtensor=self.subtensor,
                 netuid=self.config.netuid,
                 wallet=self.wallet,
-                cache_path=Path(self.config.neuron.full_path)
-                / "encrypted_endpoint.key",
+                cache_path=self._endpoint_cache_path,
             )
         except EndpointProtectionError as exc:
             bt.logging.error(
@@ -72,6 +75,10 @@ class BaseValidatorNeuron(BaseNeuron):
                 subtensor=self.subtensor,
                 netuid=self.config.netuid,
                 private_key_hex="",
+            )
+        if not self.endpoint_resolver.enabled:
+            self._endpoint_provision_retry_at = (
+                time.monotonic() + self._endpoint_provisioning_retry_seconds()
             )
         self.refresh_encrypted_endpoints(force=True)
         endpoint_status = self.endpoint_resolver.public_status()
@@ -141,10 +148,56 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.error(f"Failed to create Axon initialize with exception: {e}")
             pass
 
+    @staticmethod
+    def _endpoint_provisioning_retry_seconds() -> float:
+        try:
+            configured = float(
+                os.getenv("POKER44_ENDPOINT_PROVISIONING_RETRY_SECONDS", "60")
+            )
+        except ValueError:
+            configured = 60.0
+        return max(30.0, configured)
+
+    def _retry_endpoint_provisioning(self) -> None:
+        resolver = getattr(self, "endpoint_resolver", None)
+        if resolver is None or resolver.enabled:
+            return
+        now = time.monotonic()
+        if now < getattr(self, "_endpoint_provision_retry_at", 0.0):
+            return
+        self._endpoint_provision_retry_at = (
+            now + self._endpoint_provisioning_retry_seconds()
+        )
+        try:
+            candidate = ValidatorEndpointResolver.from_env(
+                subtensor=self.subtensor,
+                netuid=self.config.netuid,
+                wallet=self.wallet,
+                cache_path=self._endpoint_cache_path,
+            )
+        except EndpointProtectionError as exc:
+            bt.logging.warning(
+                "Encrypted Axon key reprovisioning is still unavailable: "
+                f"{exc}"
+            )
+            return
+        self.endpoint_resolver = candidate
+        if candidate.enabled:
+            bt.logging.info(
+                "Encrypted Axon key provisioning recovered automatically | "
+                f"key_source={candidate.key_source} "
+                f"fingerprint={candidate.key_fingerprint}"
+            )
+
     def refresh_encrypted_endpoints(self, force: bool = False) -> int:
         resolver = getattr(self, "endpoint_resolver", None)
-        if resolver is None or not resolver.enabled:
+        if resolver is None:
             return 0
+        if not resolver.enabled:
+            self._retry_endpoint_provisioning()
+            resolver = self.endpoint_resolver
+            if not resolver.enabled:
+                return 0
         try:
             count = resolver.refresh(self.metagraph.hotkeys, force=force)
             bt.logging.info(

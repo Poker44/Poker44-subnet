@@ -899,3 +899,53 @@ def test_candidate_selection_skips_unresolved_masked_endpoint(monkeypatch):
 
     assert uids == []
     assert axons == []
+
+
+def test_validator_recovers_endpoint_provisioning_without_restart(
+    monkeypatch,
+    tmp_path,
+):
+    from poker44.base.validator import BaseValidatorNeuron
+
+    class TestValidator(BaseValidatorNeuron):
+        async def forward(self):
+            return None
+
+    private_key, _ = _keypair()
+    subtensor = FakeSubtensor([])
+    disabled = endpoints.ValidatorEndpointResolver(
+        subtensor=subtensor,
+        netuid=126,
+        private_key_hex="",
+    )
+    recovered = endpoints.ValidatorEndpointResolver(
+        subtensor=subtensor,
+        netuid=126,
+        private_key_hex=private_key.hex(),
+    )
+    validator = object.__new__(TestValidator)
+    validator.subtensor = subtensor
+    validator.config = SimpleNamespace(netuid=126)
+    validator.wallet = SimpleNamespace(
+        hotkey=SimpleNamespace(ss58_address="validator-hotkey")
+    )
+    validator.metagraph = SimpleNamespace(hotkeys=["validator-hotkey"])
+    validator.endpoint_resolver = disabled
+    validator._endpoint_cache_path = tmp_path / "endpoint.key"
+    validator._endpoint_provision_retry_at = 0.0
+    provision_calls = []
+
+    def provision(cls, **kwargs):
+        provision_calls.append(kwargs)
+        return recovered
+
+    monkeypatch.setattr(
+        endpoints.ValidatorEndpointResolver,
+        "from_env",
+        classmethod(provision),
+    )
+
+    assert validator.refresh_encrypted_endpoints(force=True) == 0
+    assert validator.endpoint_resolver is recovered
+    assert validator.endpoint_resolver.enabled
+    assert len(provision_calls) == 1
