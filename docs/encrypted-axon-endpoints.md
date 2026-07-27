@@ -57,6 +57,33 @@ must complete these steps in order:
 Enabling protection before this gate is complete can make a miner unreachable
 to validators that have not upgraded.
 
+## Canary Safety Checks
+
+Subnet 126 currently enforces a 50-block Axon serving rate limit. Before moving
+the controlled canary to a new origin, confirm that at least 50 blocks have
+passed since its last Axon update. Starting the migration sooner can leave the
+old public endpoint on-chain until the rate limit expires.
+
+Keep the previous origin available throughout the canary. Do not treat a
+successful process start or commitment publication as proof that masking is
+active. Confirm all of the following independently:
+
+1. the finalized commitment read-back exactly matches the ciphertext published
+   by the canary;
+2. the finalized metagraph advertises `192.0.2.1:1234` for the canary hotkey;
+3. every scoring validator reports the expected key fingerprint, a successful
+   commitment refresh, and the canary in its protected-miner count;
+4. every scoring validator completes a signed request to the canary through the
+   resolved endpoint;
+5. a normal score report from the canary reaches the backend without changing
+   scoring, coverage, latency, or weight behavior for public miners.
+
+Abort the rollout if any validator cannot resolve or query the canary. Keep the
+new origin online, wait for the Axon serving rate limit when necessary, remove
+the miner protection settings, advertise the new public endpoint again, and
+confirm that finalized metagraph read-back before considering rollback
+complete. A local restart alone is not proof of rollback.
+
 ## Miner Activation
 
 Update dependencies and set:
@@ -73,7 +100,8 @@ will be published only after the rollout gate is complete.
 
 After Poker44 confirms validator readiness, a miner whose previous IP has
 already been exposed should move to a new origin IP before the protected
-restart.
+restart. Keep the old origin available until the canary checks above have
+completed.
 
 ## Validator Activation
 
