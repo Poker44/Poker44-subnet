@@ -9,6 +9,20 @@ from poker44.validator.forward import _persist_model_manifest_registry
 
 
 class ValidatorRuntimeSmokeGuardTests(unittest.TestCase):
+    def test_update_aborts_before_restart_on_stash_conflict(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        script = (
+            repo_root / "scripts/validator/update/update_validator.sh"
+        ).read_text(encoding="utf-8")
+
+        conflict_guard = script.index("Could not reapply local changes after updating.")
+        dependency_install = script.index("Installing/updating Python dependencies")
+        process_restart = script.index("Restarting PM2 process")
+
+        self.assertIn("exit 1", script[conflict_guard:dependency_install])
+        self.assertLess(conflict_guard, dependency_install)
+        self.assertLess(dependency_install, process_restart)
+
     def test_persist_model_manifest_registry_handles_mixed_uid_key_types(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "model_manifests.json"

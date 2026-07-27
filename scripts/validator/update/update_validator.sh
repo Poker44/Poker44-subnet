@@ -146,7 +146,9 @@ echo "[INFO] Updated commit: $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev
 if [ "$AUTO_UPDATE_STASH_CREATED" = "1" ] && [ -n "$AUTO_UPDATE_STASH_REF" ]; then
   echo "[INFO] Restoring stashed local changes..."
   if ! git stash pop "$AUTO_UPDATE_STASH_REF"; then
-    echo "[WARN] Could not automatically reapply stashed local changes; leaving stash for manual review."
+    echo "[ERROR] Could not reapply local changes after updating." >&2
+    echo "[ERROR] The existing validator process was not restarted; resolve the Git conflict manually." >&2
+    exit 1
   fi
 fi
 popd > /dev/null
