@@ -211,9 +211,10 @@ AXON_PORT=8091 \
 ```
 
 If publication is not confirmed, the miner keeps its public endpoint to avoid
-losing validator connectivity. See
-[Encrypted Axon Endpoints](./encrypted-axon-endpoints.md) for the rollout and
-security model.
+losing validator connectivity. The release includes the subnet public key, so
+miners do not need to configure `POKER44_ENDPOINT_PUBLIC_KEY`. See
+[Encrypted Axon Endpoints](./encrypted-axon-endpoints.md) for activation
+verification, rollback, and the security model.
 
 Direct CLI example:
 

@@ -4,6 +4,7 @@
   <p>
     <a href="docs/validator.md">🔐 Validator Guide</a> &bull;
     <a href="docs/miner.md">🛠️ Miner Guide</a> &bull;
+    <a href="docs/encrypted-axon-endpoints.md">🛡️ Endpoint Protection</a> &bull;
     <a href="docs/training-benchmark.md">📦 Training Benchmark</a> &bull;
     <a href="https://poker44.net">🌐 Platform</a>
   </p>
@@ -84,6 +85,7 @@ See:
 
 - [Miner Guide](docs/miner.md)
 - [Validator Guide](docs/validator.md)
+- [Encrypted Axon Endpoint Protection](docs/encrypted-axon-endpoints.md)
 - [Training Benchmark](docs/training-benchmark.md)
 
 ---
@@ -136,6 +138,7 @@ Then follow:
 
 - [Validator setup](docs/validator.md)
 - [Miner setup](docs/miner.md)
+- [Encrypted Axon endpoint protection](docs/encrypted-axon-endpoints.md)
 - [Training benchmark](docs/training-benchmark.md)
 
 ---
@@ -144,6 +147,7 @@ Then follow:
 
 - Validator docs: [`docs/validator.md`](docs/validator.md)
 - Miner docs: [`docs/miner.md`](docs/miner.md)
+- Endpoint protection: [`docs/encrypted-axon-endpoints.md`](docs/encrypted-axon-endpoints.md)
 - Training benchmark docs: [`docs/training-benchmark.md`](docs/training-benchmark.md)
 
 ---

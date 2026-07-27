@@ -31,8 +31,8 @@ Protection is disabled for miners unless explicitly enabled. Public miners keep
 using their existing metagraph endpoints.
 
 Validators without a configured decryption key keep their existing behavior for
-public miners. They cannot contact protected miners, so miners must not opt in
-until Poker44 confirms that the active validator set has upgraded.
+public miners but cannot contact protected miners. The current active scoring
+validator set has completed the protected-endpoint upgrade.
 
 If commitment publication fails, the miner keeps its public endpoint. It never
 switches to the placeholder endpoint on an unconfirmed or unreadable
@@ -52,32 +52,32 @@ Miners should activate one at a time and confirm finalized commitment and
 metagraph state before retiring the previous origin. Enabling protection
 against an outdated validator set can make a miner unreachable.
 
-## Canary Safety Checks
+## Activation Safety Checks
 
 Subnet 126 currently enforces a 50-block Axon serving rate limit. Before moving
-the controlled canary to a new origin, confirm that at least 50 blocks have
-passed since its last Axon update. Starting the migration sooner can leave the
-old public endpoint on-chain until the rate limit expires.
+an opted-in miner to a new origin, confirm that at least 50 blocks have passed
+since its last Axon update. Starting the migration sooner can leave the old
+public endpoint on-chain until the rate limit expires.
 
-Keep the previous origin available throughout the canary. Do not treat a
+Keep the previous origin available throughout activation. Do not treat a
 successful process start or commitment publication as proof that masking is
-active. Confirm all of the following independently:
+active. Confirm all of the following independently for the protected miner:
 
 1. the finalized commitment read-back exactly matches the ciphertext published
-   by the canary;
-2. the finalized metagraph advertises `192.0.2.1:1234` for the canary hotkey;
+   by the miner;
+2. the finalized metagraph advertises `192.0.2.1:1234` for the miner hotkey;
 3. every scoring validator reports the expected key fingerprint, a successful
-   commitment refresh, and the canary in its protected-miner count;
-4. every scoring validator completes a signed request to the canary through the
+   commitment refresh, and the miner in its protected-miner count;
+4. every scoring validator completes a signed request to the miner through the
    resolved endpoint;
-5. a normal score report from the canary reaches the backend without changing
+5. a normal score report from the miner reaches the backend without changing
    scoring, coverage, latency, or weight behavior for public miners.
 
-Abort the rollout if any validator cannot resolve or query the canary. Keep the
-new origin online, wait for the Axon serving rate limit when necessary, remove
-the miner protection settings, advertise the new public endpoint again, and
-confirm that finalized metagraph read-back before considering rollback
-complete. A local restart alone is not proof of rollback.
+Disable protection for the affected miner if any validator cannot resolve or
+query it. Keep the new origin online, wait for the Axon serving rate limit when
+necessary, remove the miner protection settings, advertise the new public
+endpoint again, and confirm that finalized metagraph read-back before
+considering rollback complete. A local restart alone is not proof of rollback.
 
 ## Miner Activation
 
@@ -93,10 +93,9 @@ Subnet 126 includes the endpoint public key in the release. The
 `POKER44_ENDPOINT_PUBLIC_KEY` setting remains available only as an explicit
 override.
 
-After Poker44 confirms validator readiness, a miner whose previous IP has
-already been exposed should move to a new origin IP before the protected
-restart. Keep the old origin available until the canary checks above have
-completed.
+A miner whose previous IP has already been exposed should move to a new origin
+IP before the protected restart. Keep the old origin available until the
+activation checks above have completed.
 
 ## Validator Activation
 
