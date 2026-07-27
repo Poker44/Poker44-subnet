@@ -10,4 +10,4 @@ __all__ = [
 
 __version__ = "0.2.0"
 __spec_version__ = 2
-VALIDATOR_DEPLOY_VERSION = "0.2.0-dev.4"
+VALIDATOR_DEPLOY_VERSION = "0.2.0-dev.5"

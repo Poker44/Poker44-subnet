@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import bittensor as bt
 import numpy as np
 
+from poker44.base.utils.weight_utils import convert_weights_and_uids_for_emit
 from poker44.platform.models import ValidationRound
 from poker44.validator.evaluation.models import MinerEvaluation
 from poker44.validator.settlement.weights import weight_rows
@@ -83,16 +84,30 @@ class ValidatorSettlementMixin:
             if str(hotkey) == self.wallet.hotkey.ss58_address
         ]
 
-    async def _weight_update_visible_after(self, commit_block: int) -> bool:
-        metagraph = await asyncio.to_thread(
-            self.subtensor.metagraph, self.config.netuid
+    async def _reported_weights_are_visible(self, report: dict) -> bool:
+        chain_weights = await asyncio.to_thread(
+            self.subtensor.weights, self.config.netuid
         )
-        hotkey = self.wallet.hotkey.ss58_address
-        try:
-            uid = list(metagraph.hotkeys).index(hotkey)
-        except ValueError:
+        uid = int(self.uid)
+        visible = dict(chain_weights).get(uid)
+        if visible is None:
             return False
-        return int(metagraph.last_update[uid]) > int(commit_block)
+        rows = report.get("weights") or []
+        expected_uids, expected_weights = convert_weights_and_uids_for_emit(
+            uids=np.asarray([int(row["uid"]) for row in rows], dtype=np.int64),
+            weights=np.asarray([float(row["weight"]) for row in rows], dtype=np.float32),
+        )
+        expected = {
+            int(row_uid): int(row_weight)
+            for row_uid, row_weight in zip(expected_uids, expected_weights)
+            if int(row_weight) > 0
+        }
+        actual = {
+            int(row_uid): int(row_weight)
+            for row_uid, row_weight in visible
+            if int(row_weight) > 0
+        }
+        return bool(expected) and actual == expected
 
     async def _reconcile_pending_weight_reveals(self) -> None:
         reports = self._load_pending_reveal_reports()
@@ -105,7 +120,7 @@ class ValidatorSettlementMixin:
         remaining: list[dict] = []
         for report in reports:
             key = (int(report["commit_block"]), int(report["reveal_round"]))
-            if key in pending or not await self._weight_update_visible_after(key[0]):
+            if key in pending or not await self._reported_weights_are_visible(report):
                 remaining.append(report)
                 continue
             await self._report_event(

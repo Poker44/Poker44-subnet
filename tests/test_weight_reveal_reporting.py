@@ -17,6 +17,9 @@ class FakeSubtensor:
     def metagraph(self, _netuid):
         return SimpleNamespace(hotkeys=[self.hotkey], last_update=[120])
 
+    def weights(self, _netuid):
+        return [(0, [(2, 65535)])]
+
 
 @pytest.mark.asyncio
 async def test_pending_weight_reveal_is_reported_after_becoming_visible(tmp_path):
@@ -29,6 +32,7 @@ async def test_pending_weight_reveal_is_reported_after_becoming_visible(tmp_path
     validator.wallet = SimpleNamespace(
         hotkey=SimpleNamespace(ss58_address=hotkey)
     )
+    validator.uid = 0
     validator.subtensor = FakeSubtensor(hotkey)
     validator._report_event = AsyncMock()
     validation_round = SimpleNamespace(round_id="window-1")
@@ -64,6 +68,7 @@ async def test_pending_weight_reveal_stays_queued_while_commit_is_pending(tmp_pa
     validator.wallet = SimpleNamespace(
         hotkey=SimpleNamespace(ss58_address=hotkey)
     )
+    validator.uid = 0
     validator.subtensor = FakeSubtensor(hotkey)
     validator.subtensor.pending = [(hotkey, 100, b"ciphertext", 200)]
     validator._report_event = AsyncMock()
