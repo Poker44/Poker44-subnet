@@ -196,8 +196,9 @@ If `ALLOWED_VALIDATOR_HOTKEYS` is empty, the script falls back to
 ## Optional Encrypted Axon Endpoint
 
 Poker44 can hide an opted-in miner origin from the public metagraph by
-publishing a hotkey-bound encrypted endpoint commitment. Do not activate this
-until Poker44 confirms that the active validators support protected endpoints.
+publishing a hotkey-bound encrypted endpoint commitment. The active Poker44
+validator set supports protected endpoints, but activation remains disabled by
+default and must be enabled explicitly by each miner.
 
 ```bash
 POKER44_ENCRYPTED_AXON_ENABLED=true \

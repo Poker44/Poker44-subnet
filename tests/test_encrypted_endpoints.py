@@ -614,13 +614,37 @@ def test_disabled_miner_does_not_publish(monkeypatch):
     assert endpoints.enable_miner_endpoint_protection(SimpleNamespace()) is False
 
 
-def test_miner_cannot_activate_before_public_key_rollout(monkeypatch):
+def test_miner_uses_published_subnet_key_when_enabled(monkeypatch):
     monkeypatch.setenv(endpoints.PROTECTION_ENABLED_ENV, "true")
     monkeypatch.delenv(endpoints.PUBLIC_KEY_ENV, raising=False)
+    miner = SimpleNamespace(
+        config=SimpleNamespace(netuid=126),
+        axon=SimpleNamespace(
+            ip="8.8.8.8",
+            port=8091,
+            external_ip="8.8.8.8",
+            external_port=8091,
+        ),
+        wallet=SimpleNamespace(
+            hotkey=SimpleNamespace(ss58_address="miner-hotkey"),
+        ),
+        subtensor=object(),
+    )
+    published = {}
 
-    miner = SimpleNamespace(config=SimpleNamespace(netuid=126))
-    with pytest.raises(endpoints.EndpointProtectionError, match="No encrypted endpoint"):
-        endpoints.enable_miner_endpoint_protection(miner)
+    def publish(**kwargs):
+        published.update(kwargs)
+        return True
+
+    monkeypatch.setattr(endpoints, "publish_endpoint_commitment", publish)
+    monkeypatch.setattr(endpoints, "verify_endpoint_commitment", lambda **_: True)
+
+    assert endpoints.enable_miner_endpoint_protection(miner) is True
+    assert published["netuid"] == 126
+    assert len(published["ciphertext"]) <= endpoints.MAX_COMMITMENT_BYTES
+    assert hashlib.sha256(
+        bytes.fromhex(endpoints.DEFAULT_PUBLIC_KEYS[126])
+    ).hexdigest()[:16] == "d4a77a56d68268df"
 
 
 def test_publish_uses_extrinsic_success_flag(monkeypatch):

@@ -42,20 +42,15 @@ An encrypted commitment is used only while the miner advertises Poker44's
 masked endpoint. If the miner later returns to a public Axon, validators ignore
 the old commitment and use the public metagraph endpoint.
 
-## Rollout Gate
+## Rollout Status
 
-Shipping resolver code does not authorize miners to enable protection. Poker44
-must complete these steps in order:
+The active scoring validator set supports protected endpoints and reports the
+expected key fingerprint. The subnet public key is available in the current
+release, but miner protection remains opt-in and disabled by default.
 
-1. deploy the resolver to the active validator set with miner protection still
-   disabled;
-2. verify matching key fingerprints and successful commitment refresh status
-   in validator runtime reports;
-3. validate one controlled canary miner end to end;
-4. explicitly announce that miner activation is available.
-
-Enabling protection before this gate is complete can make a miner unreachable
-to validators that have not upgraded.
+Miners should activate one at a time and confirm finalized commitment and
+metagraph state before retiring the previous origin. Enabling protection
+against an outdated validator set can make a miner unreachable.
 
 ## Canary Safety Checks
 
@@ -94,9 +89,9 @@ export POKER44_AXON_EXTERNAL_IP=<new_public_ipv4>
 export POKER44_AXON_EXTERNAL_PORT=<axon_port>
 ```
 
-During the validator-readiness phase, Poker44 provides
-`POKER44_ENDPOINT_PUBLIC_KEY` only to controlled canary miners. A subnet default
-will be published only after the rollout gate is complete.
+Subnet 126 includes the endpoint public key in the release. The
+`POKER44_ENDPOINT_PUBLIC_KEY` setting remains available only as an explicit
+override.
 
 After Poker44 confirms validator readiness, a miner whose previous IP has
 already been exposed should move to a new origin IP before the protected

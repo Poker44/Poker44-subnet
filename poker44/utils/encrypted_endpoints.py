@@ -45,9 +45,9 @@ PROVISIONING_RESPONSE_LIMIT_BYTES = 64 * 1024
 PROVISIONING_ENVELOPE_VERSION = 1
 PROVISIONING_ALGORITHM = "curve25519-xsalsa20-poly1305"
 
-# Kept empty until the validator-readiness gate and canary rollout complete.
-# Controlled canaries receive a public key through PUBLIC_KEY_ENV.
-DEFAULT_PUBLIC_KEYS: Dict[int, str] = {}
+DEFAULT_PUBLIC_KEYS: Dict[int, str] = {
+    126: "3fa48ff09c0c4c55473122600cc85c47bc09f4c6e7c2f3ed2554183e82d99344",
+}
 EXPECTED_PROVISIONED_KEY_FINGERPRINTS: Dict[int, str] = {
     126: "d4a77a56d68268df",
 }
