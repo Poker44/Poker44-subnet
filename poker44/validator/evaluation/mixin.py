@@ -185,6 +185,7 @@ class ValidatorEvaluationMixin:
             return []
         synapse = SessionDetectionSynapse(
             window_id=validation_round.lease.window_id,
+            dataset_hash=validation_round.lease.dataset_hash,
             sessions=validation_round.miner_sessions,
         )
         responses = await self.dendrite(

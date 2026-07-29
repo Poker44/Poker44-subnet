@@ -39,6 +39,34 @@ class ReferenceSessionModel:
 
     @classmethod
     def _session_score(cls, session: dict[str, Any]) -> float:
+        if str(session.get("schema_version") or "") == "3":
+            decisions = [
+                decision
+                for decision in (session.get("decisions") or [])
+                if isinstance(decision, dict)
+            ]
+            counts = Counter(
+                str(decision.get("action_type") or "") for decision in decisions
+            )
+            meaningful = max(1, len(decisions))
+            aggression = (
+                counts["bet"] + counts["raise"] + counts["all_in"]
+            ) / meaningful
+            passivity = (counts["check"] + counts["call"]) / meaningful
+            folds = counts["fold"] / meaningful
+            overbets = sum(
+                1
+                for decision in decisions
+                if decision.get("size_bucket") in {"overbet", "all_in"}
+            ) / meaningful
+            score = (
+                0.42 * cls._clamp(aggression / 0.45)
+                + 0.24 * cls._clamp(folds / 0.45)
+                + 0.20 * cls._clamp(overbets / 0.20)
+                + 0.14 * (1.0 - cls._clamp(passivity / 0.75))
+            )
+            return round(cls._clamp(score), 6)
+
         hands = session.get("hands") or []
         telemetry = session.get("telemetry") or {}
         events = telemetry.get("events") or []

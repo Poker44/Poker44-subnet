@@ -42,16 +42,39 @@ class MinerInferenceService:
         # Tournament-sourced sessions use the sanitized v2 contract. Keep v1
         # readable during the migration so an already sealed legacy window does
         # not fail solely because miners upgraded before every validator.
-        if str(session.get("schema_version") or "") not in {"1", "2"}:
+        schema_version = str(session.get("schema_version") or "")
+        if schema_version not in {"1", "2", "3"}:
             raise ValueError(f"sessions[{index}] has unsupported schema_version")
         if not str(session.get("session_id") or "").strip():
             raise ValueError(f"sessions[{index}] has no session_id")
-        hands = session.get("hands")
-        if not isinstance(hands, list) or not hands:
-            raise ValueError(f"sessions[{index}] must contain at least one hand")
-        telemetry = session.get("telemetry")
-        if not isinstance(telemetry, dict):
-            raise ValueError(f"sessions[{index}] has invalid telemetry")
+        if schema_version == "3":
+            decisions = session.get("decisions")
+            if not isinstance(decisions, list) or len(decisions) < 12:
+                raise ValueError(
+                    f"sessions[{index}] must contain at least 12 strategic decisions"
+                )
+            expected_keys = {
+                "decision_number",
+                "phase",
+                "position_group",
+                "pressure",
+                "action_type",
+                "size_bucket",
+                "is_all_in",
+            }
+            for decision_index, decision in enumerate(decisions):
+                if not isinstance(decision, dict) or set(decision) != expected_keys:
+                    raise ValueError(
+                        f"sessions[{index}].decisions[{decision_index}] "
+                        "does not match the strategic v3 contract"
+                    )
+        else:
+            hands = session.get("hands")
+            if not isinstance(hands, list) or not hands:
+                raise ValueError(f"sessions[{index}] must contain at least one hand")
+            telemetry = session.get("telemetry")
+            if not isinstance(telemetry, dict):
+                raise ValueError(f"sessions[{index}] has invalid telemetry")
         leaked = MinerInferenceService._find_forbidden(session, f"sessions[{index}]")
         if leaked:
             raise ValueError(

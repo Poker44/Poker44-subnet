@@ -125,27 +125,31 @@ raw dealt-hand counts alone do not guarantee readiness.
 ### 5. Validator lease and miner request
 
 Each validator acquires an idempotent lease for the current window. The lease
-contains the miner-visible payload plus labels for local scoring. Before
+contains the exact same persisted payload list plus labels for local scoring.
+The validator recomputes `dataset_hash` over the ordered miner-visible payloads
+and rejects any mismatch. Before
 constructing `SessionDetectionSynapse`, the validator separates the labels and
 sends only the ordered feature payloads.
 
-As a second independent control, the validator fits simple one-threshold
-classifiers to miner-visible payload size and event counts before querying any
-miner. If that local red-team canary earns more than the configured reward
-limit, evaluation stops and no miner receives the window.
+For strategic v3, the validator verifies that decision counts and the complete
+`phase × position_group × pressure` context multiset are identical across
+subjects. The gate deliberately ignores the chosen action and size bucket,
+which are the intended strategic signal. Any context mismatch stops evaluation
+before a miner receives the snapshot.
 
 The synapse request is:
 
 ```python
 SessionDetectionSynapse(
-    protocol_version="1",
+    protocol_version="2",
     window_id="window_...",
+    dataset_hash="<sha256 of ordered sessions>",
     sessions=[session_0, session_1, ...],
 )
 ```
 
 `protocol_version` versions the Bittensor transport. Each session has its own
-`schema_version`, currently `"2"`, which versions the feature contract.
+`schema_version`, currently `"3"`, which versions the feature contract.
 
 ### 6. Miner inference
 
@@ -181,7 +185,23 @@ provide weights.
 An invalid response, missing response, wrong output length, non-finite value or
 out-of-range score receives zero reward for that evaluation cycle.
 
-## Miner-visible subject session v2
+## Miner-visible strategic subject session v3
+
+The normative scored contract is
+[`contracts/subject-session.v3.schema.json`](../contracts/subject-session.v3.schema.json),
+with a checked fixture at
+[`examples/subject-session.v3.json`](../examples/subject-session.v3.json).
+Each payload is one pseudonymous subject and contains at least 12 decisions.
+Every subject in the snapshot has the same context multiset. Only
+`action_type`, `size_bucket` and `is_all_in` carry subject-specific strategic
+behavior.
+
+The contract intentionally contains no hands, telemetry, clocks, cards, chip
+amounts, tournament results or source identifiers. Schema v1/v2 remains
+readable during migration but is not the contract for newly published scored
+snapshots.
+
+## Legacy miner-visible subject session v2
 
 The normative contract is
 [`contracts/subject-session.v2.schema.json`](../contracts/subject-session.v2.schema.json).
@@ -348,17 +368,17 @@ Before running the tournament-based release:
 2. Configure `POKER44_MODEL_FACTORY=your_package.module:create_model`.
 3. Ensure the factory returns an object with `version`, `load()` and
    `predict(sessions)`.
-4. Accept subject-session `schema_version: "2"`. The subnet boundary also
-   accepts legacy version 1 during migration.
-5. Parse a list of sessions, not a flat list of hands.
+4. Accept strategic subject-session `schema_version: "3"`. The subnet boundary
+   also accepts legacy versions 1 and 2 during migration.
+5. Parse a list of sessions containing `decisions`.
 6. Produce exactly one score per session and preserve input order.
 7. Return finite values in `[0, 1]`; do not return only class labels.
 8. Treat nullable fields, empty arrays and future additive fields defensively.
 9. Do not hardcode the current three-hands-per-session collector setting.
 10. Remove features derived from IDs, window metadata, request order or wall
     clock.
-11. Confirm the model does not expect v1-only telemetry fields such as `source`
-    or raw `target`.
+11. Confirm the scored model does not require telemetry, timestamps, cards,
+    exact chips or tournament outcomes.
 12. Size inference for the configured session and byte limits.
 13. Avoid classifiers based only on payload byte length or raw event volume;
     these are monitored as provenance shortcuts and are not stable behavioral
@@ -379,29 +399,22 @@ from typing import Any
 
 
 def extract_features(session: dict[str, Any]) -> dict[str, float]:
-    hands = session.get("hands") or []
-    actions = [
-        action
-        for hand in hands
-        if isinstance(hand, dict)
-        for action in (hand.get("actions") or [])
-        if isinstance(action, dict)
-    ]
-    telemetry = session.get("telemetry") or {}
-    events = telemetry.get("events") or []
-    summary = telemetry.get("summary") or {}
-
     decisions = [
-        float(action["decision_time_ms"])
-        for action in actions
-        if action.get("decision_time_ms") is not None
+        decision
+        for decision in (session.get("decisions") or [])
+        if isinstance(decision, dict)
     ]
+    aggressive = sum(
+        decision.get("action_type") in {"bet", "raise", "all_in"}
+        for decision in decisions
+    )
+    facing_bet = sum(
+        decision.get("pressure") == "facing_bet" for decision in decisions
+    )
     return {
-        "hand_count": float(len(hands)),
-        "action_count": float(len(actions)),
-        "telemetry_event_count": float(len(events)),
-        "decision_mean_ms": float(summary.get("decision_mean_ms") or 0.0),
-        "observed_decision_count": float(len(decisions)),
+        "decision_count": float(len(decisions)),
+        "aggression_rate": aggressive / max(1, len(decisions)),
+        "facing_bet_rate": facing_bet / max(1, len(decisions)),
     }
 ```
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import hashlib
+import json
 from typing import Any
 
 
@@ -24,6 +26,16 @@ def _find_forbidden(value: Any, path: str) -> list[str]:
             for item in _find_forbidden(child, f"{path}[{index}]")
         ]
     return []
+
+
+def canonical_dataset_hash(sessions: list[dict[str, Any]]) -> str:
+    encoded = json.dumps(
+        sessions,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -80,6 +92,13 @@ class SessionLease:
         dataset_hash = str(value.get("dataset_hash") or "").strip()
         if not dataset_hash:
             raise ValueError("Session lease requires a dataset_hash")
+        computed_hash = canonical_dataset_hash(
+            [session.payload for session in sessions]
+        )
+        if computed_hash != dataset_hash:
+            raise ValueError(
+                "Session lease dataset_hash does not match miner-visible payloads"
+            )
         return cls(
             lease_id=lease_id,
             window_id=window_id,

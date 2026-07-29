@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://poker44.net/contracts/subject-session.v3.schema.json",
+  "title": "Poker44 Strategic Subject Session v3",
+  "description": "Miner-visible, telemetry-free strategic decisions with matched context distributions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "window_id", "decisions"],
+  "properties": {
+    "schema_version": { "const": "3" },
+    "session_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "window_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "decisions": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision_number",
+          "phase",
+          "position_group",
+          "pressure",
+          "action_type",
+          "size_bucket",
+          "is_all_in"
+        ],
+        "properties": {
+          "decision_number": { "type": "integer", "minimum": 1 },
+          "phase": { "type": "string", "enum": ["preflop", "flop", "turn", "river"] },
+          "position_group": { "type": "string", "enum": ["early", "late", "blinds"] },
+          "pressure": { "type": "string", "enum": ["facing_bet", "no_call"] },
+          "action_type": {
+            "type": "string",
+            "enum": ["fold", "check", "call", "bet", "raise", "all_in"]
+          },
+          "size_bucket": {
+            "type": "string",
+            "enum": [
+              "not_applicable",
+              "unknown",
+              "third_pot_or_less",
+              "half_pot",
+              "three_quarter_pot",
+              "pot",
+              "overbet",
+              "all_in"
+            ]
+          },
+          "is_all_in": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

@@ -18,8 +18,9 @@ class SessionDetectionSynapse(bt.Synapse):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    protocol_version: str = "1"
+    protocol_version: str = "2"
     window_id: str = ""
+    dataset_hash: str = ""
     sessions: list[dict[str, Any]] = Field(default_factory=list)
 
     risk_scores: list[float] | None = None
@@ -29,6 +30,7 @@ class SessionDetectionSynapse(bt.Synapse):
     required_hash_fields: ClassVar[list[str]] = [
         "protocol_version",
         "window_id",
+        "dataset_hash",
         "sessions",
     ]
 

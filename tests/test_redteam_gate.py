@@ -60,3 +60,53 @@ def test_gate_skips_single_class_operational_windows() -> None:
 
     assert result.skipped is True
     assert result.passed is False
+
+
+def strategic_session(action: str, *, context_shift: bool = False) -> dict[str, object]:
+    return {
+        "schema_version": "3",
+        "session_id": f"session_{action}_{context_shift}",
+        "window_id": "window_example",
+        "decisions": [
+            {
+                "decision_number": index + 1,
+                "phase": "turn" if context_shift and index == 0 else (
+                    "preflop" if index < 9 else "flop"
+                ),
+                "position_group": ("early", "late", "blinds")[index % 3],
+                "pressure": "facing_bet" if index % 2 else "no_call",
+                "action_type": action,
+                "size_bucket": (
+                    "half_pot" if action in {"bet", "raise"} else "not_applicable"
+                ),
+                "is_all_in": False,
+            }
+            for index in range(12)
+        ],
+    }
+
+
+def test_gate_accepts_matched_contexts_when_only_strategy_differs() -> None:
+    sessions = [
+        strategic_session("check"),
+        strategic_session("call"),
+        strategic_session("raise"),
+        strategic_session("fold"),
+    ]
+    result = audit_redteam_leakage(sessions, [0, 0, 1, 1], threshold=0.15)
+
+    assert result.passed is True
+    assert result.reward == 0.0
+
+
+def test_gate_rejects_v3_context_distribution_shortcuts() -> None:
+    sessions = [
+        strategic_session("check"),
+        strategic_session("call"),
+        strategic_session("raise", context_shift=True),
+        strategic_session("fold", context_shift=True),
+    ]
+    result = audit_redteam_leakage(sessions, [0, 0, 1, 1], threshold=0.15)
+
+    assert result.passed is False
+    assert result.feature == "strategic_context_signature"

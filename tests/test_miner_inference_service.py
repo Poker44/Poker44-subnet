@@ -62,9 +62,38 @@ async def test_model_accepts_legacy_session_protocol_v1_during_migration():
 
 
 @pytest.mark.asyncio
+async def test_strategic_session_protocol_v3_is_accepted():
+    decisions = [
+        {
+            "decision_number": index + 1,
+            "phase": "preflop" if index < 9 else "flop",
+            "position_group": ("early", "late", "blinds")[index % 3],
+            "pressure": "facing_bet" if index % 2 else "no_call",
+            "action_type": "raise" if index % 3 == 0 else "fold",
+            "size_bucket": "half_pot" if index % 3 == 0 else "not_applicable",
+            "is_all_in": False,
+        }
+        for index in range(12)
+    ]
+    scores = await make_service().predict(
+        [
+            {
+                "schema_version": "3",
+                "session_id": "strategic-1",
+                "window_id": "window-1",
+                "decisions": decisions,
+            }
+        ]
+    )
+
+    assert len(scores) == 1
+    assert 0.0 <= scores[0] <= 1.0
+
+
+@pytest.mark.asyncio
 async def test_future_session_protocol_is_rejected():
     with pytest.raises(ValueError, match="unsupported schema_version"):
-        await make_service().predict([make_session(schema_version="3")])
+        await make_service().predict([make_session(schema_version="4")])
 
 
 @pytest.mark.asyncio

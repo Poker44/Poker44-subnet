@@ -3,13 +3,19 @@
 The validator owns the complete scoring decision:
 
 1. Poll for a sealed evaluation window.
-2. Acquire an idempotent validator-specific lease of Nv labelled sessions.
+2. Acquire an idempotent validator-specific lease of the complete labelled snapshot.
 3. Strip labels and send the same feature payload to reachable miner axons.
 4. Compute reward locally from average precision, bot recall at low false-positive rate and Brier skill.
 5. Update local EMA scores and submit the normalized vector on chain when cadence permits.
 6. Mark the lease complete and report signed lifecycle events to the dashboard.
 
 The session service never returns a weight vector and the dashboard is observability-only. Labels are separated from miner payloads by `poker44/platform/models.py`.
+
+Every validator receives the same persisted payload list, order and
+`dataset_hash`. The validator recomputes the canonical hash before any miner is
+queried. A completed lease is not replayed after restart; the snapshot remains
+active for validators that have not evaluated it until an operator atomically
+publishes a newer tournament snapshot.
 
 Key variables:
 
@@ -45,12 +51,11 @@ address. See [encrypted Axon endpoints](encrypted-axon-endpoints.md).
 
 ## Tournament-driven cadence
 
-Competition rounds are removed. Recurring tournaments produce completed hands
-and telemetry continuously, while the platform seals a new evaluation window
-only after enough comparable, quality-checked sessions exist. If no sealed
-window is available, the validator does not query miners and continues polling.
-The delay between evaluation cycles is therefore data-dependent and may span
-one or several days.
+Competition rounds are removed. Recurring tournaments produce source data,
+while an operator publishes a quality-audited strategic snapshot after the
+tournament completes. The active snapshot does not expire on a wall-clock TTL.
+If no snapshot is available, or this validator already completed its
+idempotent lease, it does not query miners and continues polling.
 
 Legacy names such as `ValidationRound`,
 `POKER44_VALIDATOR_SESSIONS_PER_ROUND`,
@@ -59,10 +64,9 @@ codebase, they refer to one internal evaluation cycle identified by a sealed
 `window_id`; they are not tournament stages and do not allow miners to join a
 later competition round.
 
-The default validator request is 20 sessions. This matches the standard
-20-seat tournament window configured by the platform: 10 eligible human
-sessions and 10 eligible bot sessions. The value remains configurable for
-larger future tournament profiles.
+`POKER44_VALIDATOR_SESSIONS_PER_ROUND` remains in the wire request for
+compatibility, but the backend returns the complete snapshot so different
+validator settings cannot create different evaluation datasets.
 
 The complete upstream tournament lifecycle and downstream miner contract are
 documented in

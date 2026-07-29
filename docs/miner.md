@@ -2,17 +2,19 @@
 
 The miner exposes `SessionDetectionSynapse` on its axon and keeps its classifier loaded in memory. It does not download a validator-selected artifact and does not expose a second inference server.
 
-Input is an ordered list of subject sessions with hands and telemetry. New
-tournament data uses
-[`subject-session.v2`](../contracts/subject-session.v2.schema.json): absolute
-timestamps and platform identifiers are removed, action times become relative,
-and telemetry exposes allowlisted event types, target categories and bucketed
-values. Labels such as `is_bot`, `label`, `ground_truth` and `bot_family` are
-forbidden at the inference boundary.
+Input is an ordered list of subject sessions. New scored tournament snapshots
+use [`subject-session.v3`](../contracts/subject-session.v3.schema.json): each
+session contains a context-matched bundle of coarse poker decisions and no
+telemetry, timing, cards, chip amounts, results or platform identifiers.
+`dataset_hash` commits the exact ordered miner-visible payloads, never their
+labels. Legacy v1/v2 parsing remains only for migration safety. Labels such as
+`is_bot`, `label`, `ground_truth` and `bot_family` are forbidden at the
+inference boundary.
 
 Output is one calibrated bot probability per input session, in input order.
-Miners must not produce one score per hand. Session and window identifiers,
-request order and request timing are metadata rather than behavioral features.
+Miners must not produce one score per decision. Session and window identifiers,
+`dataset_hash`, request order and request timing are metadata rather than
+behavioral features.
 
 Configure a production model with `POKER44_MODEL_FACTORY=module:create_model`.
 Optional limits are `POKER44_MAX_SESSIONS_PER_REQUEST`,

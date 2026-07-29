@@ -58,6 +58,46 @@ FEATURES: dict[str, Callable[[dict[str, Any]], float]] = {
 }
 
 
+def _decisions(session: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        decision
+        for decision in (session.get("decisions") or [])
+        if isinstance(decision, dict)
+    ]
+
+
+def _context_signature(session: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            f"{decision.get('phase')}|{decision.get('position_group')}|"
+            f"{decision.get('pressure')}"
+            for decision in _decisions(session)
+        )
+    )
+
+
+STRATEGIC_FEATURES: dict[str, Callable[[dict[str, Any]], float]] = {
+    "decision_count": lambda session: float(len(_decisions(session))),
+    "postflop_decisions": lambda session: float(
+        sum(
+            1
+            for decision in _decisions(session)
+            if decision.get("phase") != "preflop"
+        )
+    ),
+    "facing_bet_decisions": lambda session: float(
+        sum(
+            1
+            for decision in _decisions(session)
+            if decision.get("pressure") == "facing_bet"
+        )
+    ),
+    "context_variant_count": lambda session: float(
+        len(set(_context_signature(session)))
+    ),
+}
+
+
 def _balanced_accuracy(predictions: list[int], labels: list[int]) -> float:
     truth = np.asarray(labels, dtype=int)
     predicted = np.asarray(predictions, dtype=int)
@@ -92,6 +132,37 @@ def audit_redteam_leakage(
             reason="single_class_window_cannot_audit_leakage",
         )
 
+    schema_versions = {
+        str(session.get("schema_version") or "") for session in sessions
+    }
+    strategic = schema_versions == {"3"}
+    if "3" in schema_versions and not strategic:
+        return RedTeamGateResult(
+            passed=False,
+            skipped=False,
+            threshold=threshold,
+            reward=1.0,
+            feature="mixed_schema_versions",
+            split_value=None,
+            bot_when_below=None,
+            balanced_accuracy=1.0,
+            metrics={},
+            reason="strategic_window_mixes_payload_contracts",
+        )
+    if strategic and len({_context_signature(session) for session in sessions}) != 1:
+        return RedTeamGateResult(
+            passed=False,
+            skipped=False,
+            threshold=threshold,
+            reward=1.0,
+            feature="strategic_context_signature",
+            split_value=None,
+            bot_when_below=None,
+            balanced_accuracy=1.0,
+            metrics={},
+            reason="strategic_context_distribution_differs",
+        )
+
     best: tuple[
         float,
         str | None,
@@ -100,7 +171,8 @@ def audit_redteam_leakage(
         float,
         dict[str, float],
     ] = (0.0, None, None, None, 0.5, {})
-    for feature_name, feature in FEATURES.items():
+    feature_set = STRATEGIC_FEATURES if strategic else FEATURES
+    for feature_name, feature in feature_set.items():
         values = [feature(session) for session in sessions]
         unique = sorted(set(values))
         splits = (

@@ -1,0 +1,115 @@
+{
+  "schema_version": "3",
+  "session_id": "session_86cc2a76c193d2195ec1fcd2",
+  "window_id": "window_1785340000000_1a2b3c4d",
+  "decisions": [
+    {
+      "decision_number": 1,
+      "phase": "preflop",
+      "position_group": "early",
+      "pressure": "facing_bet",
+      "action_type": "fold",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 2,
+      "phase": "preflop",
+      "position_group": "late",
+      "pressure": "no_call",
+      "action_type": "raise",
+      "size_bucket": "half_pot",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 3,
+      "phase": "preflop",
+      "position_group": "blinds",
+      "pressure": "facing_bet",
+      "action_type": "call",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 4,
+      "phase": "preflop",
+      "position_group": "early",
+      "pressure": "no_call",
+      "action_type": "fold",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 5,
+      "phase": "preflop",
+      "position_group": "late",
+      "pressure": "facing_bet",
+      "action_type": "fold",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 6,
+      "phase": "preflop",
+      "position_group": "blinds",
+      "pressure": "no_call",
+      "action_type": "check",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 7,
+      "phase": "preflop",
+      "position_group": "early",
+      "pressure": "facing_bet",
+      "action_type": "call",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 8,
+      "phase": "preflop",
+      "position_group": "late",
+      "pressure": "no_call",
+      "action_type": "raise",
+      "size_bucket": "third_pot_or_less",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 9,
+      "phase": "preflop",
+      "position_group": "blinds",
+      "pressure": "facing_bet",
+      "action_type": "fold",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 10,
+      "phase": "flop",
+      "position_group": "early",
+      "pressure": "no_call",
+      "action_type": "check",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 11,
+      "phase": "flop",
+      "position_group": "late",
+      "pressure": "facing_bet",
+      "action_type": "call",
+      "size_bucket": "not_applicable",
+      "is_all_in": false
+    },
+    {
+      "decision_number": 12,
+      "phase": "turn",
+      "position_group": "blinds",
+      "pressure": "no_call",
+      "action_type": "bet",
+      "size_bucket": "three_quarter_pot",
+      "is_all_in": false
+    }
+  ]
+}
