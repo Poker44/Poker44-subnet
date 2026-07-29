@@ -13,7 +13,7 @@ from poker44.base.miner import BaseMinerNeuron
 from poker44.miner.config import MinerModelConfig
 from poker44.miner.loader import load_model
 from poker44.miner.service import MinerInferenceService
-from poker44.protocol import SessionDetectionSynapse
+from poker44.protocol import SessionDetectionSynapse, validate_session_request
 
 
 class Miner(BaseMinerNeuron):
@@ -31,12 +31,7 @@ class Miner(BaseMinerNeuron):
     async def forward(
         self, synapse: SessionDetectionSynapse
     ) -> SessionDetectionSynapse:
-        if synapse.protocol_version != "1":
-            raise ValueError(
-                f"Unsupported Poker44 protocol version: {synapse.protocol_version}"
-            )
-        if not synapse.window_id.strip():
-            raise ValueError("window_id is required")
+        validate_session_request(synapse)
         scores = await self.inference.predict(synapse.sessions)
         synapse.risk_scores = scores
         synapse.predictions = [score >= 0.5 for score in scores]

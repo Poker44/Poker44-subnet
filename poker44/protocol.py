@@ -7,6 +7,8 @@ from typing import Any, ClassVar
 import bittensor as bt
 from pydantic import ConfigDict, Field
 
+SUPPORTED_PROTOCOL_VERSIONS = frozenset({"1", "2"})
+
 
 class SessionDetectionSynapse(bt.Synapse):
     """Classify miner-visible subject sessions as human or bot.
@@ -36,6 +38,23 @@ class SessionDetectionSynapse(bt.Synapse):
 
     def deserialize(self) -> "SessionDetectionSynapse":
         return self
+
+
+def validate_session_request(synapse: SessionDetectionSynapse) -> None:
+    """Reject unsupported or incomplete requests before miner inference."""
+
+    if synapse.protocol_version not in SUPPORTED_PROTOCOL_VERSIONS:
+        raise ValueError(
+            f"Unsupported Poker44 protocol version: {synapse.protocol_version}"
+        )
+    if not synapse.window_id.strip():
+        raise ValueError("window_id is required")
+    if synapse.protocol_version == "2":
+        dataset_hash = synapse.dataset_hash.strip().lower()
+        if len(dataset_hash) != 64 or any(
+            character not in "0123456789abcdef" for character in dataset_hash
+        ):
+            raise ValueError("dataset_hash must be a 64-character SHA-256 hex digest")
 
 
 # Transitional import name for validators/miners that have not yet upgraded.
