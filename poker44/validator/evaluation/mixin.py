@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import os
+import asyncio
 import json
-import socket
+import os
 import re
-from hashlib import sha256
+import socket
 from dataclasses import replace
+from hashlib import sha256
 from typing import Any
 
 import bittensor as bt
@@ -147,6 +148,45 @@ class ValidatorEvaluationMixin:
         except Exception:
             return None
 
+    async def _retry_transient_responses(
+        self,
+        *,
+        uids: list[int],
+        axons: list[Any],
+        synapse: SessionDetectionSynapse,
+        responses: list[Any],
+    ) -> list[Any]:
+        """Retry miners that returned no scores before finalizing the round."""
+
+        missing = [
+            index
+            for index, response in enumerate(responses)
+            if not isinstance(getattr(response, "risk_scores", None), list)
+        ]
+        if not missing:
+            return responses
+
+        delay = max(
+            0.0, float(os.getenv("POKER44_MINER_RETRY_DELAY_SECONDS", "30"))
+        )
+        bt.logging.warning(
+            "Retrying transient miner responses | "
+            f"uids={','.join(str(uids[index]) for index in missing)} "
+            f"delay_seconds={delay:g}"
+        )
+        if delay:
+            await asyncio.sleep(delay)
+        retried = await self.dendrite(
+            axons=[axons[index] for index in missing],
+            synapse=synapse,
+            deserialize=False,
+            timeout=float(self.config.neuron.timeout),
+        )
+        merged = list(responses)
+        for index, response in zip(missing, retried):
+            merged[index] = response
+        return merged
+
     async def _run_evaluation_phase(
         self, validation_round: ValidationRound
     ) -> list[MinerEvaluation]:
@@ -193,6 +233,12 @@ class ValidatorEvaluationMixin:
             synapse=synapse,
             deserialize=False,
             timeout=float(self.config.neuron.timeout),
+        )
+        responses = await self._retry_transient_responses(
+            uids=uids,
+            axons=axons,
+            synapse=synapse,
+            responses=responses,
         )
         evaluations: list[MinerEvaluation] = []
         for uid, response in zip(uids, responses):

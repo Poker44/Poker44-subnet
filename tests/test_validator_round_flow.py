@@ -5,6 +5,8 @@ import pytest
 
 from neurons.validator import Validator
 from poker44.platform.models import LeasedSession, SessionLease, ValidationRound
+from poker44.protocol import SessionDetectionSynapse
+from poker44.validator.evaluation.mixin import ValidatorEvaluationMixin
 from poker44.validator.evaluation.models import MinerEvaluation
 
 
@@ -106,4 +108,37 @@ async def test_failed_round_reports_backoff_and_terminal_state():
             "retry_in_seconds": None,
             "terminal": True,
         },
+    )
+
+
+@pytest.mark.asyncio
+async def test_transient_missing_miner_response_is_retried(monkeypatch):
+    monkeypatch.setenv("POKER44_MINER_RETRY_DELAY_SECONDS", "0")
+    valid = SimpleNamespace(risk_scores=[0.2])
+    missing = SimpleNamespace(risk_scores=None)
+    recovered = SimpleNamespace(risk_scores=[0.8])
+    validator = SimpleNamespace(
+        dendrite=AsyncMock(return_value=[recovered]),
+        config=SimpleNamespace(neuron=SimpleNamespace(timeout=10)),
+    )
+    synapse = SessionDetectionSynapse(
+        window_id="window-1",
+        dataset_hash="a" * 64,
+        sessions=[],
+    )
+
+    merged = await ValidatorEvaluationMixin._retry_transient_responses(
+        validator,
+        uids=[2, 3],
+        axons=["axon-2", "axon-3"],
+        synapse=synapse,
+        responses=[valid, missing],
+    )
+
+    assert merged == [valid, recovered]
+    validator.dendrite.assert_awaited_once_with(
+        axons=["axon-3"],
+        synapse=synapse,
+        deserialize=False,
+        timeout=10.0,
     )
