@@ -73,6 +73,6 @@ Operators may instead configure exactly one of
 material must never be committed, logged or placed in process arguments.
 
 The resolver supports mixed public and protected miners. Commitment RPC
-failures retain the last valid in-memory endpoint set. In v3, endpoint
-resolution happens before on-chain eligibility and the coldkey uniqueness
-checks, so network privacy does not weaken competition-integrity policy.
+failures retain the last valid in-memory endpoint set. Endpoint resolution
+happens before reachability filtering. Every eligible miner hotkey remains an
+independent candidate; there is no coldkey deduplication.
