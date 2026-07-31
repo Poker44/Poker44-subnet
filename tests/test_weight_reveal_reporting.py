@@ -98,6 +98,16 @@ async def test_pending_weight_reveal_stays_queued_while_commit_is_pending(tmp_pa
     assert payload["finalized_scope"] == "commit_extrinsic"
     assert len(validator._load_pending_reveal_reports()) == 1
 
+    await validator._reconcile_pending_weight_reveals()
+
+    assert transitions == [
+        "COMMIT_SUBMITTED",
+        "COMMIT_FINALIZED",
+        "COMMIT_SUBMITTED",
+        "COMMIT_FINALIZED",
+    ]
+    validator._report_event.assert_awaited_once()
+
 
 @pytest.mark.asyncio
 async def test_periodic_refresh_reveal_does_not_reopen_finished_evaluation_run(

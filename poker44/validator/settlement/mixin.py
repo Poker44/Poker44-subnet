@@ -184,6 +184,7 @@ class ValidatorSettlementMixin:
         *,
         track_evaluation_run: bool = True,
         evaluation_runs: list[dict] | None = None,
+        commit_finalized_reported: bool = False,
     ) -> None:
         reports = self._load_pending_reveal_reports()
         lease = getattr(validation_round, "lease", None)
@@ -195,6 +196,7 @@ class ValidatorSettlementMixin:
             "reveal_round": int(evidence["reveal_round"]),
             "track_evaluation_run": track_evaluation_run,
             "evaluation_runs": evaluation_runs or [],
+            "commit_finalized_reported": commit_finalized_reported,
         }
         key = (record["commit_block"], record["reveal_round"])
         reports = [
@@ -290,7 +292,13 @@ class ValidatorSettlementMixin:
                         {"commit_block": key[0], "recovered_from_pending_reveal": True},
                     )
                     commit_finalized = persisted or commit_finalized
-                if track_evaluation_run and commit_finalized:
+                already_reported = bool(
+                    report.get(
+                        "commit_finalized_reported",
+                        getattr(self.config.neuron, "wait_for_finalization", False),
+                    )
+                )
+                if track_evaluation_run and commit_finalized and not already_reported:
                     await self._report_event(
                         "commit_finalized",
                         SimpleNamespace(round_id=str(report["round_id"])),
@@ -303,6 +311,7 @@ class ValidatorSettlementMixin:
                             "finalized_scope": "commit_extrinsic",
                         },
                     )
+                    report["commit_finalized_reported"] = True
                 remaining.append(report)
                 continue
             if not await self._reported_weights_are_visible(report):
@@ -470,6 +479,9 @@ class ValidatorSettlementMixin:
                 evidence,
                 track_evaluation_run=dirty,
                 evaluation_runs=list(state.get("evaluation_runs") or []),
+                commit_finalized_reported=bool(
+                    self.config.neuron.wait_for_finalization
+                ),
             )
         else:
             evidence["chain_state"] = "weights_visible"
