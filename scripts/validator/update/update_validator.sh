@@ -3,7 +3,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-PROCESS_NAME="${PROCESS_NAME:-poker44_validator}"
+PROCESS_NAME="${PROCESS_NAME:-}"
 WALLET_NAME="${WALLET_NAME:-}"
 WALLET_HOTKEY="${WALLET_HOTKEY:-}"
 NETUID="${NETUID:-126}"
@@ -37,9 +37,19 @@ fi
 
 echo "[INFO] Repo root: $REPO_ROOT"
 echo "[INFO] Branch: $TARGET_BRANCH"
-echo "[INFO] Process: $PROCESS_NAME"
 echo "[INFO] Python: $PYTHON_BIN"
 echo "[INFO] Current commit: $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
+if [ -z "$PROCESS_NAME" ]; then
+  if pm2 describe poker44-validator >/dev/null 2>&1; then
+    PROCESS_NAME="poker44-validator"
+  elif pm2 describe poker44_validator >/dev/null 2>&1; then
+    PROCESS_NAME="poker44_validator"
+  else
+    PROCESS_NAME="poker44-validator"
+  fi
+fi
+echo "[INFO] Process: $PROCESS_NAME"
 
 install_runtime_bittensor_stack() {
   echo "[INFO] Installing runtime-431 compatible Bittensor SDK, CLI, and wallet versions..."
@@ -129,26 +139,21 @@ PY
 pushd "$REPO_ROOT" > /dev/null
 git config --local core.fileMode false || true
 
-AUTO_UPDATE_STASH_CREATED=0
-AUTO_UPDATE_STASH_REF=""
 if [ -n "$(git status --porcelain)" ]; then
-  echo "[WARN] Local changes detected; stashing before update."
-  git stash push --include-untracked -m "poker44-auto-update-prepull" >/dev/null
-  AUTO_UPDATE_STASH_CREATED=1
-  AUTO_UPDATE_STASH_REF="$(git stash list | head -n1 | cut -d: -f1)"
+  echo "[ERROR] Refusing to auto-update a dirty checkout; preserve or remove local changes first." >&2
+  exit 1
+fi
+
+CURRENT_BRANCH="$(git branch --show-current)"
+if [ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]; then
+  echo "[ERROR] Refusing to auto-update branch '$CURRENT_BRANCH'; expected '$TARGET_BRANCH'." >&2
+  exit 1
 fi
 
 echo "[INFO] Fetching latest Poker44 code from origin/$TARGET_BRANCH..."
 git fetch origin "$TARGET_BRANCH"
 git merge --ff-only "origin/$TARGET_BRANCH"
 echo "[INFO] Updated commit: $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-
-if [ "$AUTO_UPDATE_STASH_CREATED" = "1" ] && [ -n "$AUTO_UPDATE_STASH_REF" ]; then
-  echo "[INFO] Restoring stashed local changes..."
-  if ! git stash pop "$AUTO_UPDATE_STASH_REF"; then
-    echo "[WARN] Could not automatically reapply stashed local changes; leaving stash for manual review."
-  fi
-fi
 popd > /dev/null
 
 if [ -x "$REPO_ROOT/$VALIDATOR_ENV_DIR/bin/activate" ]; then

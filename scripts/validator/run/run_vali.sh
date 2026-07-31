@@ -11,6 +11,10 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 VALIDATOR_SCRIPT="${VALIDATOR_SCRIPT:-./neurons/validator.py}"
 NEURON_TIMEOUT="${NEURON_TIMEOUT:-180}"
 VALIDATOR_EXTRA_ARGS="${VALIDATOR_EXTRA_ARGS:-}"
+VALIDATOR_ENV_DIR="${VALIDATOR_ENV_DIR:-validator_env}"
+AUTO_UPDATE_ENABLED="${AUTO_UPDATE_ENABLED:-true}"
+AUTO_UPDATE_PM2_NAME="${AUTO_UPDATE_PM2_NAME:-poker44-validator-auto-update}"
+AUTO_UPDATE_INTERVAL_SECONDS="${AUTO_UPDATE_INTERVAL_SECONDS:-600}"
 
 : "${POKER44_SUBNET_DATA_URL:=https://api.poker44.net}"
 : "${POKER44_DASHBOARD_REPORT_URL:=https://api.poker44.net/api/v1/validator-events}"
@@ -55,8 +59,25 @@ fi
 
 pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
 pm2 start "$PYTHON_BIN" --name "$PM2_NAME" -- "${args[@]}"
+
+if [[ "$AUTO_UPDATE_ENABLED" == "true" ]]; then
+  AUTO_UPDATE_SCRIPT="$(git rev-parse --show-toplevel)/scripts/validator/update/auto_update_validator.sh"
+  test -f "$AUTO_UPDATE_SCRIPT" || { echo "Missing $AUTO_UPDATE_SCRIPT" >&2; exit 1; }
+  pm2 delete "$AUTO_UPDATE_PM2_NAME" >/dev/null 2>&1 || true
+  PROCESS_NAME="$PM2_NAME" \
+  WALLET_NAME="$WALLET_NAME" \
+  WALLET_HOTKEY="$HOTKEY" \
+  SUBTENSOR_PARAM="--subtensor.network $NETWORK" \
+  VALIDATOR_ENV_DIR="$VALIDATOR_ENV_DIR" \
+  VALIDATOR_EXTRA_ARGS="$VALIDATOR_EXTRA_ARGS" \
+  SLEEP_INTERVAL="$AUTO_UPDATE_INTERVAL_SECONDS" \
+  pm2 start bash --name "$AUTO_UPDATE_PM2_NAME" -- "$AUTO_UPDATE_SCRIPT"
+fi
 pm2 save
 echo "Started $PM2_NAME on netuid=$NETUID with $WALLET_NAME/$HOTKEY"
+if [[ "$AUTO_UPDATE_ENABLED" == "true" ]]; then
+  echo "Auto-update watcher: $AUTO_UPDATE_PM2_NAME every ${AUTO_UPDATE_INTERVAL_SECONDS}s"
+fi
 if [[ -n "$POKER44_ENDPOINT_PRIVATE_KEY" || -n "$POKER44_ENDPOINT_PRIVATE_KEY_FILE" ]]; then
   echo "Encrypted Axon endpoint resolver: enabled"
 elif [[ "$POKER44_ENDPOINT_AUTO_PROVISION" == "true" ]]; then

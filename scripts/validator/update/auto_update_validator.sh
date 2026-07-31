@@ -12,6 +12,7 @@ VALIDATOR_EXTRA_ARGS="${VALIDATOR_EXTRA_ARGS:-}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 STATE_FILE="${STATE_FILE:-}"
 SLEEP_INTERVAL="${SLEEP_INTERVAL:-600}"
+AUTO_UPDATE_RUN_ONCE="${AUTO_UPDATE_RUN_ONCE:-false}"
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
 if [ -z "$REPO_ROOT" ]; then
@@ -26,7 +27,7 @@ elif [[ "$STATE_FILE" != /* ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UPDATE_SCRIPT="$SCRIPT_DIR/update_validator.sh"
+UPDATE_SCRIPT="${AUTO_UPDATE_UPDATE_SCRIPT:-$SCRIPT_DIR/update_validator.sh}"
 VERSION_GATES_FILE="poker44/__init__.py"
 VERSION_KEY="VALIDATOR_DEPLOY_VERSION"
 
@@ -56,6 +57,12 @@ get_remote_commit() {
   git -C "$REPO_ROOT" rev-parse --short "origin/$TARGET_BRANCH" 2>/dev/null || echo ""
 }
 
+get_state_value() {
+  local key="$1"
+  [ -f "$STATE_FILE" ] || return 0
+  grep "^${key}=" "$STATE_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-
+}
+
 upsert_state_value() {
   local key="$1"
   local value="$2"
@@ -68,6 +75,7 @@ upsert_state_value() {
   fi
   printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
   mv "$tmp_file" "$STATE_FILE"
+  chmod 600 "$STATE_FILE"
 }
 
 is_remote_newer() {
@@ -99,10 +107,16 @@ while true; do
   REMOTE_VERSION="$(get_remote_version)"
   LOCAL_COMMIT="$(get_local_commit)"
   REMOTE_COMMIT="$(get_remote_commit)"
+  APPLIED_VERSION="$(get_state_value LAST_APPLIED_VALIDATOR_DEPLOY_VERSION)"
+  if [ -z "$APPLIED_VERSION" ]; then
+    APPLIED_VERSION="$LOCAL_VERSION"
+    upsert_state_value "LAST_APPLIED_VALIDATOR_DEPLOY_VERSION" "$APPLIED_VERSION"
+  fi
   echo "[INFO] $VERSION_KEY local=$LOCAL_VERSION remote=$REMOTE_VERSION"
+  echo "[INFO] Applied validator deploy version=$APPLIED_VERSION"
   echo "[INFO] Git commit local=$LOCAL_COMMIT remote=$REMOTE_COMMIT"
 
-  if is_remote_newer "$LOCAL_VERSION" "$REMOTE_VERSION"; then
+  if is_remote_newer "$APPLIED_VERSION" "$REMOTE_VERSION"; then
     echo "[INFO] New Poker44 deploy version detected, updating validator"
     PROCESS_NAME="$PROCESS_NAME" \
     WALLET_NAME="$WALLET_NAME" \
@@ -111,13 +125,27 @@ while true; do
     VALIDATOR_ENV_DIR="$VALIDATOR_ENV_DIR" \
     VALIDATOR_EXTRA_ARGS="$VALIDATOR_EXTRA_ARGS" \
     TARGET_BRANCH="$TARGET_BRANCH" \
-    bash -x "$UPDATE_SCRIPT"
+    bash "$UPDATE_SCRIPT"
+    UPDATED_VERSION="$(get_local_version)"
+    UPDATED_COMMIT="$(get_local_commit)"
+    EXPECTED_COMMIT="$(get_remote_commit)"
+    if [ "$UPDATED_VERSION" != "$REMOTE_VERSION" ] || [ "$UPDATED_COMMIT" != "$EXPECTED_COMMIT" ]; then
+      echo "[ERROR] Update verification failed: local version/commit does not match origin/$TARGET_BRANCH" >&2
+      exit 1
+    fi
     upsert_state_value "LAST_APPLIED_VALIDATOR_DEPLOY_VERSION" "$REMOTE_VERSION"
     echo "[INFO] Persisted LAST_APPLIED_VALIDATOR_DEPLOY_VERSION=$REMOTE_VERSION"
+    if [ "$AUTO_UPDATE_RUN_ONCE" != "true" ]; then
+      echo "[INFO] Reloading auto-update watcher from the updated checkout"
+      exec bash "$REPO_ROOT/scripts/validator/update/auto_update_validator.sh"
+    fi
   else
     echo "[INFO] No Poker44 validator update needed"
   fi
 
+  if [ "$AUTO_UPDATE_RUN_ONCE" = "true" ]; then
+    exit 0
+  fi
   echo "[INFO] Sleeping ${SLEEP_INTERVAL}s..."
   sleep "$SLEEP_INTERVAL"
 done

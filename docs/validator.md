@@ -1,6 +1,6 @@
 # Validator
 
-Poker44 v0.2.0 has one evaluation path: manually published schema-v4.1
+Poker44 v0.2.1 has one evaluation path: manually published schema-v4.1
 tournament micro-sessions derived from consented telemetry. There is no legacy
 hand JSON track, EMA, GitHub/model-repository check, W&B integration or
 coldkey-level hotkey restriction.
@@ -119,8 +119,31 @@ Run the validator with:
 bash scripts/validator/run/run_vali.sh
 ```
 
+The runner starts two persisted PM2 processes by default: the validator and
+`poker44-validator-auto-update`. Every ten minutes the watcher fetches
+`origin/main` and compares `VALIDATOR_DEPLOY_VERSION`. A strictly newer deploy
+version is fast-forwarded, dependencies are checked, the existing validator is
+restarted with its current environment, and the applied version is persisted
+in a mode-600 state file. Failed deployments are not marked applied and are
+retried by the PM2-supervised watcher. Set `AUTO_UPDATE_ENABLED=false` only when
+an operator intentionally owns updates by another process supervisor.
+
+Existing installations created before this watcher was enabled need one
+manual bootstrap; remote code cannot start a process on a third-party machine:
+
+```bash
+git pull --ff-only origin main
+AUTO_UPDATE_ENABLED=true bash scripts/validator/run/run_vali.sh
+pm2 describe poker44-validator-auto-update
+pm2 save
+```
+
+Tracked local modifications or a checkout outside `main` stop auto-update
+instead of being stashed or overwritten. Validator secrets remain in the local
+environment and `.env`; the watcher never runs with shell xtrace.
+
 The script defaults to Finney netuid 126, one concurrent forward and deploy
-version `0.2.0`. Before deployment run:
+version `0.2.1`. Before deployment run:
 
 ```bash
 ruff check poker44 neurons tests

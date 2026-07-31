@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-07-31
+
+- Trigger validator deployment of the production micro-session, 90/5/5
+  settlement, dashboard reporting and reveal-reconciliation fixes.
+- Start a PM2-supervised validator auto-update watcher by default.
+- Verify the applied version and Git commit, retry failed deployments, support
+  both documented PM2 validator names and keep updater state private.
+
 ## 0.2.0 - 2026-07-18
 
 ### Breaking
