@@ -70,12 +70,6 @@ def add_args(cls, parser: argparse.ArgumentParser) -> None:
         help="Do not wait for finalization when submitting weights.",
     )
     parser.add_argument(
-        "--neuron.moving_average_alpha",
-        type=float,
-        default=0.05,
-        help="Exponential moving average smoothing factor for scores.",
-    )
-    parser.add_argument(
         "--neuron.num_concurrent_forwards",
         type=int,
         default=1,
@@ -193,7 +187,6 @@ def _ensure_neuron_config(config: "bt.Config") -> None:
         in {"1", "true", "yes"},
         "wait_for_inclusion": True,
         "wait_for_finalization": True,
-        "moving_average_alpha": float(os.getenv("NEURON_MOVING_AVERAGE_ALPHA", "0.05")),
         "num_concurrent_forwards": int(os.getenv("NEURON_NUM_CONCURRENT_FORWARDS", "1")),
         "timeout": float(os.getenv("NEURON_TIMEOUT", "180")),
         "axon_off": False,

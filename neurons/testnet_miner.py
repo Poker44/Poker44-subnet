@@ -11,7 +11,10 @@ import bittensor as bt
 from poker44.miner.config import MinerModelConfig
 from poker44.miner.loader import load_model
 from poker44.miner.service import MinerInferenceService
-from poker44.protocol import SessionDetectionSynapse, validate_session_request
+from poker44.protocol import (
+    MicroSessionDetectionSynapse,
+    validate_micro_session_request,
+)
 from poker44.utils.encrypted_endpoints import (
     EndpointProtectionError,
     enable_miner_endpoint_protection,
@@ -40,32 +43,39 @@ class TestnetMiner:
             external_port=port,
         )
         self.axon.attach(
-            forward_fn=self.forward,
-            blacklist_fn=self.blacklist,
-            priority_fn=self.priority,
+            forward_fn=self.forward_micro_sessions,
+            blacklist_fn=self.blacklist_micro_sessions,
+            priority_fn=self.priority_micro_sessions,
         )
         self.stop_event = threading.Event()
 
-    async def forward(
-        self, synapse: SessionDetectionSynapse
-    ) -> SessionDetectionSynapse:
-        validate_session_request(synapse)
-        scores = await self.inference.predict(synapse.sessions)
+    async def forward_micro_sessions(
+        self, synapse: MicroSessionDetectionSynapse
+    ) -> MicroSessionDetectionSynapse:
+        validate_micro_session_request(synapse)
+        scores = await self.inference.predict_micro_sessions(synapse.items)
         synapse.risk_scores = scores
         synapse.predictions = [score >= 0.5 for score in scores]
         synapse.model_version = self.model.version
         bt.logging.info(
-            f"Scored {len(scores)} subject sessions for window={synapse.window_id}"
+            f"Scored {len(scores)} micro-session items for window={synapse.window_id}"
         )
         return synapse
 
-    async def blacklist(self, synapse: SessionDetectionSynapse) -> Tuple[bool, str]:
+    def _blacklist(
+        self, synapse: MicroSessionDetectionSynapse
+    ) -> Tuple[bool, str]:
         caller = getattr(synapse.dendrite, "hotkey", None)
         if caller != self.allowed_validator:
             return True, "Hotkey not in validator allowlist"
         return False, "Whitelisted validator hotkey"
 
-    async def priority(self, synapse: SessionDetectionSynapse) -> float:
+    async def blacklist_micro_sessions(
+        self, synapse: MicroSessionDetectionSynapse
+    ) -> Tuple[bool, str]:
+        return self._blacklist(synapse)
+
+    async def priority_micro_sessions(self, synapse: MicroSessionDetectionSynapse) -> float:
         return 1.0
 
     def run(self) -> None:

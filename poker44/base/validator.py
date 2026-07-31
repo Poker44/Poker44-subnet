@@ -37,7 +37,6 @@ from poker44.utils.encrypted_endpoints import (
     EndpointProtectionError,
     ValidatorEndpointResolver,
 )
-from poker44.validator.settlement.weights import retain_top_scores
 
 
 class BaseValidatorNeuron(BaseNeuron):
@@ -101,13 +100,10 @@ class BaseValidatorNeuron(BaseNeuron):
 
         bt.logging.info(f"Dendrite: {self.dendrite}")
 
-        # Set up initial scoring weights for validation
-        bt.logging.info("Building validation weights.")
-        self.scores = np.zeros(self.metagraph.n, dtype=np.float32)
+        # The durable settlement file owns the exact target. Scores are never
+        # reconstructed from prior per-round scores after restart.
         self.axon = None
 
-        # Restore EMA scores by hotkey identity. UIDs can be reassigned between
-        # restarts, so an index-only restore would credit the wrong miner.
         self.load_state()
 
         # Serve axon to enable external connections.
@@ -177,8 +173,7 @@ class BaseValidatorNeuron(BaseNeuron):
             )
         except EndpointProtectionError as exc:
             bt.logging.warning(
-                "Encrypted Axon key reprovisioning is still unavailable: "
-                f"{exc}"
+                f"Encrypted Axon key reprovisioning is still unavailable: {exc}"
             )
             return
         self.endpoint_resolver = candidate
@@ -327,21 +322,15 @@ class BaseValidatorNeuron(BaseNeuron):
             self.is_running = False
             bt.logging.debug("Stopped")
 
-    def prepare_weights(self):
+    def prepare_weights(self, raw_weights=None):
         """Build the exact SDK-constrained vector that would be submitted."""
-        local_scores = np.nan_to_num(
-            np.asarray(self.scores, dtype=np.float32),
-            nan=0.0,
-            posinf=0.0,
-            neginf=0.0,
-        )
-        local_scores = np.clip(local_scores, 0.0, None)
-        max_winners = max(1, int(os.getenv("POKER44_WEIGHT_WINNERS", "10")))
-        local_scores = retain_top_scores(local_scores, max_winners=max_winners)
-        total = float(local_scores.sum())
+        if raw_weights is None:
+            return None
+        raw_weights = np.asarray(raw_weights, dtype=np.float32)
+        total = float(raw_weights.sum())
         if total <= 0.0:
             return None
-        raw_weights = local_scores / total
+        raw_weights = raw_weights / total
         processed_uids, processed_weights = process_weights_for_netuid(
             uids=self.metagraph.uids,
             weights=raw_weights,
@@ -353,6 +342,12 @@ class BaseValidatorNeuron(BaseNeuron):
             uids=processed_uids,
             weights=processed_weights,
         )
+        nonzero = np.flatnonzero(np.asarray(processed_weights) > 0.0)
+        if len(nonzero) != 1 or not np.isclose(float(np.sum(processed_weights)), 1.0):
+            raise RuntimeError(
+                "Live subnet constraints transformed winner-takes-all into a "
+                f"non one-hot vector (nonzero={len(nonzero)})"
+            )
         return processed_uids, processed_weights, uint_uids, uint_weights
 
     def set_weights(self, prepared_weights=None):
@@ -360,15 +355,9 @@ class BaseValidatorNeuron(BaseNeuron):
         Sets the validator weights to the metagraph hotkeys based on the scores it has received from the miners. The weights determine the trust and incentive level the validator assigns to miner nodes on the network.
         """
 
-        # Check if self.scores contains any NaN values and log a warning if it does.
-        if np.isnan(self.scores).any():
-            bt.logging.warning(
-                "Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
-            )
-
         # Validators are the sole authority for their weight vector. No backend
         # endpoint is consulted here.
-        prepared = prepared_weights or self.prepare_weights()
+        prepared = prepared_weights
         if prepared is None:
             bt.logging.warning(
                 "Skipping weight submission: no positive evaluated scores"
@@ -524,7 +513,7 @@ class BaseValidatorNeuron(BaseNeuron):
         )
 
     def resync_metagraph(self):
-        """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
+        """Resync the metagraph without silently reassigning a stale target."""
         bt.logging.info("resync_metagraph()")
 
         # Copies state of metagraph before syncing.
@@ -539,74 +528,10 @@ class BaseValidatorNeuron(BaseNeuron):
             return
 
         bt.logging.info(
-            "Metagraph updated, re-syncing hotkeys, dendrite pool and moving averages"
+            "Metagraph updated; refreshing hotkey identity map"
         )
-        # Zero out all hotkeys that have been replaced.
-        for uid, hotkey in enumerate(self.hotkeys):
-            if hotkey != self.metagraph.hotkeys[uid]:
-                self.scores[uid] = 0  # hotkey has been replaced
-
-        # Check to see if the metagraph has changed size.
-        # If so, we need to add new hotkeys and moving averages.
-        if len(self.hotkeys) < len(self.metagraph.hotkeys):
-            # Update the size of the moving average scores.
-            new_moving_average = np.zeros((self.metagraph.n))
-            min_len = min(len(self.hotkeys), len(self.scores))
-            new_moving_average[:min_len] = self.scores[:min_len]
-            self.scores = new_moving_average
-
         # Update the hotkeys.
         self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)
-
-    def update_scores(self, rewards: np.ndarray, uids: List[int]):
-        """Performs exponential moving average on the scores based on the rewards received from the miners."""
-
-        # Check if rewards contains NaN values.
-        if np.isnan(rewards).any():
-            bt.logging.warning(f"NaN values detected in rewards: {rewards}")
-            # Replace any NaN values in rewards with 0.
-            rewards = np.nan_to_num(rewards, nan=0)
-
-        # Ensure rewards is a numpy array.
-        rewards = np.asarray(rewards)
-
-        # Check if `uids` is already a numpy array and copy it to avoid the warning.
-        if isinstance(uids, np.ndarray):
-            uids_array = uids.copy()
-        else:
-            uids_array = np.array(uids)
-
-        # Handle edge case: If either rewards or uids_array is empty.
-        if rewards.size == 0 or uids_array.size == 0:
-            bt.logging.info(f"rewards: {rewards}, uids_array: {uids_array}")
-            bt.logging.warning(
-                "Either rewards or uids_array is empty. No updates will be performed."
-            )
-            return
-
-        # Check if sizes of rewards and uids_array match.
-        if rewards.size != uids_array.size:
-            raise ValueError(
-                f"Shape mismatch: rewards array of shape {rewards.shape} "
-                f"cannot be broadcast to uids array of shape {uids_array.shape}"
-            )
-
-        # Compute forward pass rewards, assumes uids are mutually exclusive.
-        # shape: [ metagraph.n ]
-        scattered_rewards: np.ndarray = np.zeros_like(self.scores)
-        scattered_rewards[uids_array] = rewards
-        bt.logging.debug(f"Scattered rewards: {rewards}")
-
-        # Update scores with rewards produced by this step.
-        # shape: [ metagraph.n ]
-        alpha: float = self.config.neuron.moving_average_alpha
-        self.scores: np.ndarray = alpha * scattered_rewards + (1 - alpha) * self.scores
-        bt.logging.debug(f"Updated moving avg scores: {self.scores}")
-
-    def should_set_weights(self) -> bool:
-        return (
-            bool(np.any(np.asarray(self.scores) > 0.0)) and super().should_set_weights()
-        )
 
     def save_state(self):
         """Saves the state of the validator to a file."""
@@ -618,7 +543,7 @@ class BaseValidatorNeuron(BaseNeuron):
         np.savez(
             temporary_path,
             step=self.step,
-            scores=self.scores,
+            checkpoint_version=np.asarray(3, dtype=np.int64),
             hotkeys=self.hotkeys,
         )
         os.replace(temporary_path, state_path)
@@ -628,8 +553,7 @@ class BaseValidatorNeuron(BaseNeuron):
                 status="running",
                 extra={
                     "step": int(self.step),
-                    "score_slots": int(len(self.scores)),
-                    "nonzero_scores": int(np.count_nonzero(self.scores)),
+                    "checkpoint_version": 3,
                 },
             )
 
@@ -642,25 +566,16 @@ class BaseValidatorNeuron(BaseNeuron):
             return
         try:
             with np.load(state_path, allow_pickle=False) as state:
-                previous_hotkeys = [str(value) for value in state["hotkeys"].tolist()]
-                previous_scores = np.asarray(state["scores"], dtype=np.float32)
+                version = int(state["checkpoint_version"])
+                if version != 3:
+                    raise ValueError(f"unsupported checkpoint version: {version}")
                 self.step = int(state["step"])
-            score_by_hotkey = {
-                hotkey: float(previous_scores[index])
-                for index, hotkey in enumerate(previous_hotkeys)
-                if index < len(previous_scores)
-            }
-            self.scores = np.asarray(
-                [score_by_hotkey.get(str(hotkey), 0.0) for hotkey in self.hotkeys],
-                dtype=np.float32,
-            )
             bt.logging.info(
-                f"Validator checkpoint restored | step={self.step} scores={len(self.scores)}"
+                f"Validator checkpoint restored | step={self.step}"
             )
         except Exception as exc:
             bt.logging.error(
                 f"Validator checkpoint is unreadable; starting clean: {exc}"
             )
             self.step = 0
-            self.scores = np.zeros(self.metagraph.n, dtype=np.float32)
             self.save_state()

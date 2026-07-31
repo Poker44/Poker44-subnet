@@ -28,9 +28,9 @@ def create_constant_model(config: MinerModelConfig) -> ConstantRiskModel:
 class QualityRiskModel:
     """Deterministic testnet model with a configurable prediction quality.
 
-    This model never reads a label. It starts from the same hand/telemetry
+    This model never reads a label. It starts from the same micro-session strategy
     features as the public reference model, then deterministically inverts a
-    subset of predictions based only on ``session_id``. Running several
+    subset of predictions based only on ``item_id``. Running several
     qualities gives the E2E stack a stable, progressively ranked miner set.
     """
 
@@ -52,7 +52,7 @@ class QualityRiskModel:
         scores: list[float] = []
         for session in sessions:
             base = ReferenceSessionModel._session_score(session)
-            session_id = str(session.get("session_id") or "")
+            session_id = str(session.get("item_id") or "")
             score = (
                 base if self._unit_interval(session_id) <= self.quality else 1.0 - base
             )

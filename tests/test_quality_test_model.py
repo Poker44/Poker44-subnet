@@ -17,14 +17,21 @@ def config() -> MinerModelConfig:
 
 def session(session_id: str) -> dict:
     return {
-        "schema_version": "2",
-        "session_id": session_id,
+        "schema_version": "4.1",
+        "item_id": session_id,
         "window_id": "window-1",
-        "hands": [{"actions": [{"action_type": "raise"}]}],
-        "telemetry": {
-            "events": [],
-            "summary": {"decision_mean_ms": 400, "decision_std_ms": 30},
-        },
+        "decisions": [
+            {
+                "decision_number": index + 1,
+                "phase": "flop" if index == 0 else "preflop",
+                "position_group": ("early", "late", "blinds")[index % 3],
+                "pressure": "facing_bet" if index % 2 else "no_call",
+                "action_type": "raise",
+                "size_bucket": "half_pot",
+                "is_all_in": False,
+            }
+            for index in range(4)
+        ],
     }
 
 

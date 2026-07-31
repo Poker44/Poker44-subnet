@@ -38,7 +38,7 @@ from poker44.utils.encrypted_endpoints import (
     EndpointProtectionError,
     enable_miner_endpoint_protection,
 )
-from poker44.protocol import SessionDetectionSynapse
+from poker44.protocol import MicroSessionDetectionSynapse
 
 from typing import Union
 
@@ -71,14 +71,12 @@ class BaseMinerNeuron(BaseNeuron):
         # Attach determiners which functions are called when servicing a request.
         bt.logging.info("Attaching forward function to miner axon.")
         self.axon.attach(
-            forward_fn=self.forward,
-            blacklist_fn=self.blacklist,
-            priority_fn=self.priority,
+            forward_fn=self.forward_micro_sessions,
+            blacklist_fn=self.blacklist_micro_sessions,
+            priority_fn=self.priority_micro_sessions,
         )
         if self.validator_hotkey_whitelist:
-            self.axon.verify_fns[SessionDetectionSynapse.__name__] = (
-                self.verify_validator_request
-            )
+            self.axon.verify_fns[MicroSessionDetectionSynapse.__name__] = self.verify_validator_request
         # # self.axon.attach(
         #     forward_fn=self.forward_feedback,
         #     blacklist_fn=self.blacklist_feedback,
@@ -104,7 +102,9 @@ class BaseMinerNeuron(BaseNeuron):
         )
         return {str(hotkey).strip() for hotkey in configured if str(hotkey).strip()}
 
-    async def verify_validator_request(self, synapse: SessionDetectionSynapse) -> None:
+    async def verify_validator_request(
+        self, synapse: MicroSessionDetectionSynapse
+    ) -> None:
         """Require signed requests from explicitly allowed validator hotkeys."""
         if synapse.dendrite is None:
             raise NotVerifiedException("Missing dendrite terminal in request")
@@ -123,7 +123,9 @@ class BaseMinerNeuron(BaseNeuron):
 
         await default_verify(synapse)
 
-    def common_blacklist(self, synapse: SessionDetectionSynapse):
+    def common_blacklist(
+        self, synapse: MicroSessionDetectionSynapse
+    ):
         """Shared miner admission policy with optional validator allowlist."""
         if synapse.dendrite is None or synapse.dendrite.hotkey is None:
             bt.logging.warning("Received a request without a dendrite or hotkey.")
@@ -158,7 +160,9 @@ class BaseMinerNeuron(BaseNeuron):
         bt.logging.trace(f"Not blacklisting recognized hotkey {hotkey}")
         return False, "Hotkey recognized"
 
-    def caller_priority(self, synapse: SessionDetectionSynapse) -> float:
+    def caller_priority(
+        self, synapse: MicroSessionDetectionSynapse
+    ) -> float:
         if synapse.dendrite is None or synapse.dendrite.hotkey is None:
             bt.logging.warning("Received a request without a dendrite or hotkey.")
             return 0.0

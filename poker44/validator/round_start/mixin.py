@@ -45,6 +45,23 @@ class ValidatorRoundStartMixin:
         # Every validator leasing it must report the same identifier so the
         # dashboard can aggregate participants and miner scores correctly.
         validation_round = ValidationRound(lease=lease, round_id=lease.window_id)
+        run = await asyncio.to_thread(
+            self.subnet_data.claim_evaluation_run,
+            validation_round.lease.window_id,
+            validation_round.round_id,
+        )
+        state = str(run.get("state") or "")
+        if state not in {"ACQUIRED", "EVALUATED"}:
+            bt.logging.info(
+                "Current window already reached a durable settlement phase | "
+                f"window={lease.window_id} state={state}"
+            )
+            return None
+        validation_round.resume_state = state
+        evidence = run.get("evidence")
+        validation_round.resume_evidence = (
+            evidence if isinstance(evidence, dict) else {}
+        )
         self.round_manager.start(validation_round)
         await self._report_event(
             "validation_round_started",
@@ -52,6 +69,10 @@ class ValidatorRoundStartMixin:
             {
                 "window_id": lease.window_id,
                 "dataset_hash": lease.dataset_hash,
+                "fixture_only": lease.fixture_only,
+                "single_tournament_production": bool(
+                    lease.audit.get("singleTournamentProduction", False)
+                ),
             },
         )
         await self._report_event(
@@ -60,7 +81,21 @@ class ValidatorRoundStartMixin:
             {
                 "lease_id": lease.lease_id,
                 "session_count": len(lease.sessions),
+                "item_count": len(lease.sessions),
+                "independent_actor_count": len(
+                    {
+                        session.actor_group or f"item:{index}"
+                        for index, session in enumerate(lease.sessions)
+                    }
+                ),
                 "expires_at": lease.expires_at,
+                "fixture_only": lease.fixture_only,
+                "single_tournament_production": bool(
+                    lease.audit.get("singleTournamentProduction", False)
+                ),
+                "tournament_count": int(lease.audit.get("tournaments", 0)),
+                "bot_family_count": int(lease.audit.get("botFamilies", 0)),
+                "rejection_counts": lease.audit.get("rejectionCounts", {}),
             },
         )
         return validation_round

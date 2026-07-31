@@ -5,7 +5,7 @@ import pytest
 
 from neurons.validator import Validator
 from poker44.platform.models import LeasedSession, SessionLease, ValidationRound
-from poker44.protocol import SessionDetectionSynapse
+from poker44.protocol import MicroSessionDetectionSynapse
 from poker44.validator.evaluation.mixin import ValidatorEvaluationMixin
 from poker44.validator.evaluation.models import MinerEvaluation
 
@@ -19,7 +19,7 @@ async def test_round_flows_from_platform_lease_through_rewards_and_weights():
         expires_at="2099-01-01T00:00:00Z",
         sessions=[
             LeasedSession(
-                payload={"session_id": "session-1", "window_id": "round-1"},
+                payload={"item_id": "item-1", "schema_version": "4.1", "window_id": "round-1"},
                 is_bot=True,
             )
         ],
@@ -28,7 +28,7 @@ async def test_round_flows_from_platform_lease_through_rewards_and_weights():
     evaluation = MinerEvaluation(
         uid=4,
         hotkey="miner-hotkey",
-        reward=0.9,
+        quality_score=0.9,
         metrics={"accuracy": 1.0},
         response_seconds=0.1,
         model_version="model-v1",
@@ -45,13 +45,20 @@ async def test_round_flows_from_platform_lease_through_rewards_and_weights():
             fail=Mock(),
         ),
         _reconcile_pending_weight_reveals=AsyncMock(),
+        _attempt_pending_weight_settlement=AsyncMock(),
         _report_event=AsyncMock(),
     )
     validator._start_validation_round = AsyncMock(
-        side_effect=lambda: (calls.append("load_platform_sessions"), validation_round)[1]
+        side_effect=lambda *_: (
+            calls.append("load_platform_sessions"),
+            validation_round,
+        )[1]
     )
     validator._run_evaluation_phase = AsyncMock(
-        side_effect=lambda _: (calls.append("query_miners_and_compute_rewards"), [evaluation])[1]
+        side_effect=lambda _: (
+            calls.append("query_miners_and_compute_rewards"),
+            [evaluation],
+        )[1]
     )
     validator._run_settlement_phase = AsyncMock(
         side_effect=lambda *_: (
@@ -83,13 +90,14 @@ async def test_failed_round_reports_backoff_and_terminal_state():
             window_id="round-1",
             dataset_hash="hash",
             expires_at="2099-01-01T00:00:00Z",
-            sessions=[LeasedSession(payload={"session_id": "s1"}, is_bot=True)],
+            sessions=[LeasedSession(payload={"item_id": "i1", "schema_version": "4.1"}, is_bot=True)],
         )
     )
     validator = SimpleNamespace(
         poll_interval=0,
         round_manager=SimpleNamespace(fail=Mock(return_value=None)),
         _reconcile_pending_weight_reveals=AsyncMock(),
+        _attempt_pending_weight_settlement=AsyncMock(),
         _start_validation_round=AsyncMock(return_value=validation_round),
         _run_evaluation_phase=AsyncMock(side_effect=RuntimeError("miner failure")),
         _report_event=AsyncMock(),
@@ -121,10 +129,11 @@ async def test_transient_missing_miner_response_is_retried(monkeypatch):
         dendrite=AsyncMock(return_value=[recovered]),
         config=SimpleNamespace(neuron=SimpleNamespace(timeout=10)),
     )
-    synapse = SessionDetectionSynapse(
+    synapse = MicroSessionDetectionSynapse(
         window_id="window-1",
         dataset_hash="a" * 64,
-        sessions=[],
+        query_id="query",
+        items=[{"schema_version": "4.1"}],
     )
 
     merged = await ValidatorEvaluationMixin._retry_transient_responses(
@@ -142,3 +151,38 @@ async def test_transient_missing_miner_response_is_retried(monkeypatch):
         deserialize=False,
         timeout=10.0,
     )
+
+
+@pytest.mark.asyncio
+async def test_evaluated_round_resumes_without_querying_miners():
+    validation_round = ValidationRound(
+        lease=SessionLease(
+            lease_id="lease-resume",
+            window_id="window-resume",
+            dataset_hash="hash",
+            expires_at="2099-01-01T00:00:00Z",
+            sessions=[LeasedSession(payload={"item_id": "i1", "schema_version": "4.1"}, is_bot=True)],
+        ),
+        resume_state="EVALUATED",
+        resume_evidence={
+            "evaluations": [
+                {
+                    "uid": 4,
+                    "hotkey": "miner",
+                    "quality_score": 0.75,
+                    "metrics": {"accuracy": 1.0},
+                    "response_seconds": 0.1,
+                    "model_version": "v4",
+                    "error": None,
+                }
+            ]
+        },
+    )
+    validator = SimpleNamespace(dendrite=AsyncMock())
+
+    restored = await ValidatorEvaluationMixin._run_evaluation_phase(
+        validator, validation_round
+    )
+
+    assert restored[0].uid == 4
+    validator.dendrite.assert_not_awaited()

@@ -42,3 +42,15 @@ def test_tied_scores_are_evaluated_as_one_threshold():
 def test_invalid_score_is_rejected():
     with pytest.raises(ValueError, match=r"\[0, 1\]"):
         reward([1.1, 0.2], [1, 0])
+
+
+def test_actor_balanced_weights_prevent_one_actor_from_dominating():
+    # The duplicated positive actor has four items, but the two actors in each
+    # class retain equal total influence.
+    result = reward(
+        [0.1, 0.2, 0.9, 0.9, 0.9, 0.9],
+        [0, 0, 1, 1, 1, 1],
+        sample_weights=[0.25, 0.25, 0.125, 0.125, 0.125, 0.125],
+    )
+    assert result.average_precision == pytest.approx(1.0)
+    assert result.reward == pytest.approx(1.0, abs=0.03)

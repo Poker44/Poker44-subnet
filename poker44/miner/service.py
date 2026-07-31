@@ -9,6 +9,7 @@ import math
 from typing import Any
 
 from poker44.miner.config import MinerModelConfig
+from poker44.miner.contracts import find_forbidden, validate_v4_micro_session
 from poker44.miner.model import BotDetectionModel
 
 
@@ -20,78 +21,28 @@ class MinerInferenceService:
 
     @staticmethod
     def _find_forbidden(value: Any, path: str = "session") -> list[str]:
-        forbidden = {"is_bot", "is_human", "ground_truth", "label", "bot_family"}
-        leaked: list[str] = []
-        if isinstance(value, dict):
-            for key, child in value.items():
-                child_path = f"{path}.{key}"
-                if str(key).lower() in forbidden:
-                    leaked.append(child_path)
-                leaked.extend(MinerInferenceService._find_forbidden(child, child_path))
-        elif isinstance(value, list):
-            for index, child in enumerate(value):
-                leaked.extend(
-                    MinerInferenceService._find_forbidden(child, f"{path}[{index}]")
-                )
-        return leaked
+        return find_forbidden(value, path)
 
     @staticmethod
-    def _validate_session(session: Any, index: int) -> dict[str, Any]:
-        if not isinstance(session, dict):
-            raise ValueError(f"sessions[{index}] must be an object")
-        # Tournament-sourced sessions use the sanitized v2 contract. Keep v1
-        # readable during the migration so an already sealed legacy window does
-        # not fail solely because miners upgraded before every validator.
-        schema_version = str(session.get("schema_version") or "")
-        if schema_version not in {"1", "2", "3"}:
-            raise ValueError(f"sessions[{index}] has unsupported schema_version")
-        if not str(session.get("session_id") or "").strip():
-            raise ValueError(f"sessions[{index}] has no session_id")
-        if schema_version == "3":
-            decisions = session.get("decisions")
-            if not isinstance(decisions, list) or len(decisions) < 12:
-                raise ValueError(
-                    f"sessions[{index}] must contain at least 12 strategic decisions"
-                )
-            expected_keys = {
-                "decision_number",
-                "phase",
-                "position_group",
-                "pressure",
-                "action_type",
-                "size_bucket",
-                "is_all_in",
-            }
-            for decision_index, decision in enumerate(decisions):
-                if not isinstance(decision, dict) or set(decision) != expected_keys:
-                    raise ValueError(
-                        f"sessions[{index}].decisions[{decision_index}] "
-                        "does not match the strategic v3 contract"
-                    )
-        else:
-            hands = session.get("hands")
-            if not isinstance(hands, list) or not hands:
-                raise ValueError(f"sessions[{index}] must contain at least one hand")
-            telemetry = session.get("telemetry")
-            if not isinstance(telemetry, dict):
-                raise ValueError(f"sessions[{index}] has invalid telemetry")
-        leaked = MinerInferenceService._find_forbidden(session, f"sessions[{index}]")
+    def _validate_micro_session(item: Any, index: int) -> dict[str, Any]:
+        if not isinstance(item, dict):
+            raise ValueError(f"items[{index}] must be an object")
+        if str(item.get("schema_version") or "") != "4.1":
+            raise ValueError(f"items[{index}] must use micro-session schema 4.1")
+        leaked = MinerInferenceService._find_forbidden(item, f"items[{index}]")
         if leaked:
-            raise ValueError(
-                f"sessions[{index}] contains ground-truth fields: {sorted(leaked)}"
-            )
-        return session
+            raise ValueError(f"items[{index}] contains ground-truth fields: {sorted(leaked)}")
+        validate_v4_micro_session(item, index)
+        return item
 
-    async def predict(self, sessions: list[dict[str, Any]]) -> list[float]:
-        if not sessions:
-            raise ValueError("A detection request must contain at least one session")
-        if len(sessions) > self.config.max_sessions_per_request:
+    async def _predict_validated(self, items: list[dict[str, Any]]) -> list[float]:
+        if len(items) > self.config.max_sessions_per_request:
             raise ValueError(
-                f"Request contains {len(sessions)} sessions; maximum is "
+                f"Request contains {len(items)} items; maximum is "
                 f"{self.config.max_sessions_per_request}"
             )
         request_bytes = len(
-            json.dumps(sessions, separators=(",", ":"), ensure_ascii=False).encode(
+            json.dumps(items, separators=(",", ":"), ensure_ascii=False).encode(
                 "utf-8"
             )
         )
@@ -100,23 +51,29 @@ class MinerInferenceService:
                 f"Request is {request_bytes} bytes; maximum is "
                 f"{self.config.max_request_bytes}"
             )
-        validated = [
-            self._validate_session(session, i) for i, session in enumerate(sessions)
-        ]
         async with self._model_lock:
             if inspect.iscoroutinefunction(self.model.predict):
-                result = await self.model.predict(validated)
+                result = await self.model.predict(items)
             else:
-                result = await asyncio.to_thread(self.model.predict, validated)
+                result = await asyncio.to_thread(self.model.predict, items)
         if inspect.isawaitable(result):
             result = await result
         scores = [float(score) for score in result]
-        if len(scores) != len(validated):
+        if len(scores) != len(items):
             raise ValueError(
-                f"Model returned {len(scores)} scores for {len(validated)} sessions"
+                f"Model returned {len(scores)} scores for {len(items)} items"
             )
         if any(
             not math.isfinite(score) or score < 0.0 or score > 1.0 for score in scores
         ):
             raise ValueError("Model risk scores must be finite values within [0, 1]")
         return scores
+
+    async def predict_micro_sessions(self, items: list[dict[str, Any]]) -> list[float]:
+        if not items:
+            raise ValueError("Micro-session request contains no items")
+        validated = [
+            self._validate_micro_session(item, index)
+            for index, item in enumerate(items)
+        ]
+        return await self._predict_validated(validated)

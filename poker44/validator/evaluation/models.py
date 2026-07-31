@@ -9,7 +9,7 @@ from dataclasses import dataclass
 class MinerEvaluation:
     uid: int
     hotkey: str
-    reward: float
+    quality_score: float
     metrics: dict[str, float]
     response_seconds: float | None
     model_version: str | None

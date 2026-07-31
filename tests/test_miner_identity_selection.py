@@ -20,22 +20,22 @@ class Harness(ValidatorEvaluationMixin):
         )
 
 
-def test_candidate_selection_enforces_one_hotkey_per_coldkey_and_identity(monkeypatch):
-    monkeypatch.setenv("POKER44_REQUIRE_MINER_IDENTITY", "true")
-    monkeypatch.setenv("POKER44_TEST_FIXTURE_UIDS", "1,2")
-    monkeypatch.delenv("POKER44_MINER_IDENTITIES_JSON", raising=False)
-
+def test_candidate_selection_queries_every_hotkey_even_when_coldkey_is_shared():
     uids, _ = Harness()._candidate_miners("window-1")
 
-    assert uids == [1]
+    assert uids == [1, 2, 3]
 
 
-def test_explicit_fixture_mode_can_represent_synthetic_shared_coldkeys(monkeypatch):
-    monkeypatch.setenv("POKER44_REQUIRE_MINER_IDENTITY", "true")
-    monkeypatch.setenv("POKER44_TEST_FIXTURE_UIDS", "1,2")
-    monkeypatch.setenv("POKER44_TEST_FIXTURE_ALLOW_SHARED_COLDKEY", "true")
-    monkeypatch.delenv("POKER44_MINER_IDENTITIES_JSON", raising=False)
+def test_candidate_selection_has_no_arbitrary_miner_cap():
+    harness = Harness()
+    miner_count = 40
+    harness.metagraph = SimpleNamespace(
+        axons=[SimpleNamespace(ip="127.0.0.1", port=9000 + uid) for uid in range(miner_count + 1)],
+        hotkeys=["validator"] + [f"miner-{uid}" for uid in range(1, miner_count + 1)],
+        coldkeys=["validator-cold"] + [f"cold-{uid}" for uid in range(1, miner_count + 1)],
+        validator_permit=[True] + [False] * miner_count,
+    )
 
-    uids, _ = Harness()._candidate_miners("window-1")
+    uids, _ = harness._candidate_miners("window-all")
 
-    assert set(uids) == {1, 2}
+    assert uids == list(range(1, miner_count + 1))

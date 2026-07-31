@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
@@ -28,36 +28,6 @@ class RedTeamGateResult:
         return asdict(self)
 
 
-def _events(session: dict[str, Any]) -> list[dict[str, Any]]:
-    telemetry = session.get("telemetry")
-    telemetry = telemetry if isinstance(telemetry, dict) else {}
-    values = telemetry.get("events")
-    return [event for event in values or [] if isinstance(event, dict)]
-
-
-def _event_count(session: dict[str, Any], event_type: str | None = None) -> int:
-    events = _events(session)
-    return sum(
-        1
-        for event in events
-        if event_type is None or str(event.get("event_type")) == event_type
-    )
-
-
-FEATURES: dict[str, Callable[[dict[str, Any]], float]] = {
-    "payload_bytes": lambda session: float(
-        len(json.dumps(session, sort_keys=True, separators=(",", ":")).encode("utf-8"))
-    ),
-    "telemetry_events": lambda session: float(_event_count(session)),
-    "pointer_moves": lambda session: float(_event_count(session, "pointer_move")),
-    "clicks": lambda session: float(_event_count(session, "click")),
-    "pointer_downs": lambda session: float(_event_count(session, "pointer_down")),
-    "event_type_count": lambda session: float(
-        len({str(event.get("event_type")) for event in _events(session)})
-    ),
-}
-
-
 def _decisions(session: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         decision
@@ -69,11 +39,26 @@ def _decisions(session: dict[str, Any]) -> list[dict[str, Any]]:
 def _context_signature(session: dict[str, Any]) -> tuple[str, ...]:
     return tuple(
         sorted(
-            f"{decision.get('phase')}|{decision.get('position_group')}|"
-            f"{decision.get('pressure')}"
+            f"{decision.get('phase')}|{decision.get('pressure')}"
             for decision in _decisions(session)
         )
     )
+
+
+def _position_distribution(
+    sessions: list[dict[str, Any]], labels: list[int], label: int
+) -> dict[str, float]:
+    counts = Counter(
+        str(decision.get("position_group"))
+        for session, session_label in zip(sessions, labels)
+        if session_label == label
+        for decision in _decisions(session)
+    )
+    total = sum(counts.values())
+    return {
+        position: counts[position] / total if total else 0.0
+        for position in ("early", "late", "blinds")
+    }
 
 
 STRATEGIC_FEATURES: dict[str, Callable[[dict[str, Any]], float]] = {
@@ -135,8 +120,7 @@ def audit_redteam_leakage(
     schema_versions = {
         str(session.get("schema_version") or "") for session in sessions
     }
-    strategic = schema_versions == {"3"}
-    if "3" in schema_versions and not strategic:
+    if schema_versions != {"4.1"}:
         return RedTeamGateResult(
             passed=False,
             skipped=False,
@@ -149,7 +133,15 @@ def audit_redteam_leakage(
             metrics={},
             reason="strategic_window_mixes_payload_contracts",
         )
-    if strategic and len({_context_signature(session) for session in sessions}) != 1:
+    context_by_class = {
+        label: Counter(
+            _context_signature(session)
+            for session, session_label in zip(sessions, labels)
+            if session_label == label
+        )
+        for label in (0, 1)
+    }
+    if context_by_class[0] != context_by_class[1]:
         return RedTeamGateResult(
             passed=False,
             skipped=False,
@@ -162,6 +154,25 @@ def audit_redteam_leakage(
             metrics={},
             reason="strategic_context_distribution_differs",
         )
+    human_positions = _position_distribution(sessions, labels, 0)
+    bot_positions = _position_distribution(sessions, labels, 1)
+    position_gap = max(
+        abs(human_positions[position] - bot_positions[position])
+        for position in human_positions
+    )
+    if position_gap > 0.15:
+        return RedTeamGateResult(
+            passed=False,
+            skipped=False,
+            threshold=threshold,
+            reward=1.0,
+            feature="strategic_position_distribution",
+            split_value=0.15,
+            bot_when_below=None,
+            balanced_accuracy=1.0,
+            metrics={"position_distribution_max_gap": position_gap},
+            reason="strategic_position_distribution_differs",
+        )
 
     best: tuple[
         float,
@@ -171,8 +182,7 @@ def audit_redteam_leakage(
         float,
         dict[str, float],
     ] = (0.0, None, None, None, 0.5, {})
-    feature_set = STRATEGIC_FEATURES if strategic else FEATURES
-    for feature_name, feature in feature_set.items():
+    for feature_name, feature in STRATEGIC_FEATURES.items():
         values = [feature(session) for session in sessions]
         unique = sorted(set(values))
         splits = (

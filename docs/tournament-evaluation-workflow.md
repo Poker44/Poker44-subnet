@@ -67,7 +67,7 @@ The assembler retains:
 - aggregate timing and activity statistics.
 
 Incomplete or low-quality chunks are not promoted into the evaluation pool.
-Internal engine fixtures, synthetic data and unverified legacy actors are also
+Internal engine fixtures, synthetic data and historical private actors are also
 excluded from subnet evaluation windows.
 
 Before sealing, the platform builds the exact miner-visible representation and
@@ -128,8 +128,8 @@ Each validator acquires an idempotent lease for the current window. The lease
 contains the exact same persisted payload list plus labels for local scoring.
 The validator recomputes `dataset_hash` over the ordered miner-visible payloads
 and rejects any mismatch. Before
-constructing `SessionDetectionSynapse`, the validator separates the labels and
-sends only the ordered feature payloads.
+constructing the track-specific Synapse, the validator separates the labels
+and sends only the ordered feature payloads.
 
 For strategic v3, the validator verifies that decision counts and the complete
 `phase × position_group × pressure` context multiset are identical across
@@ -137,19 +137,23 @@ subjects. The gate deliberately ignores the chosen action and size bucket,
 which are the intended strategic signal. Any context mismatch stops evaluation
 before a miner receives the snapshot.
 
-The synapse request is:
+For micro-session v4.1, every item has four decisions and at least one
+postflop decision. Human and bot items are matched on `phase × pressure`;
+position is balanced globally with a maximum 0.15 class-distribution gap.
+Source decisions are single-use within a window.
+
+The tournament telemetry request is:
 
 ```python
-SessionDetectionSynapse(
-    protocol_version="2",
+MicroSessionDetectionSynapse(
     window_id="window_...",
-    dataset_hash="<sha256 of ordered sessions>",
-    sessions=[session_0, session_1, ...],
+    dataset_hash="<sha256 of ordered items>",
+    query_id="<validator-bound query id>",
+    items=[item_0, item_1, ...],
 )
 ```
 
-`protocol_version` versions the Bittensor transport. Each session has its own
-`schema_version`, currently `"3"`, which versions the feature contract.
+This is the only evaluation endpoint. There is no schema negotiation or fallback.
 
 ### 6. Miner inference
 
@@ -177,160 +181,31 @@ is insufficient because calibration is part of validator scoring.
 
 ### 7. Validator scoring and settlement
 
-The validator keeps labels locally, validates the response, computes reward,
-updates its local EMA, and submits weights on chain when cadence permits. The
+The validator keeps labels locally, validates the response, computes quality,
+selects the deterministic winner and submits its one-hot target when cadence permits. The
 dashboard receives signed observability events only; it does not calculate or
 provide weights.
 
 An invalid response, missing response, wrong output length, non-finite value or
 out-of-range score receives zero reward for that evaluation cycle.
 
-## Miner-visible strategic subject session v3
+## Miner-visible telemetry micro-session v4.1
 
-The normative scored contract is
-[`contracts/subject-session.v3.schema.json`](../contracts/subject-session.v3.schema.json),
-with a checked fixture at
-[`examples/subject-session.v3.json`](../examples/subject-session.v3.json).
-Each payload is one pseudonymous subject and contains at least 12 decisions.
-Every subject in the snapshot has the same context multiset. Only
-`action_type`, `size_bucket` and `is_all_in` carry subject-specific strategic
-behavior.
+The normative tournament contract is
+[`contracts/subject-session.v4.1.schema.json`](../contracts/subject-session.v4.1.schema.json).
+Each payload contains exactly four coarse poker decisions with at least one
+postflop decision. Human and bot items are context-matched without exposing
+labels, actors, cards, exact chips, timing provenance or tournament identity.
 
-The contract intentionally contains no hands, telemetry, clocks, cards, chip
-amounts, tournament results or source identifiers. Schema v1/v2 remains
-readable during migration but is not the contract for newly published scored
-snapshots.
-
-## Legacy miner-visible subject session v2
-
-The normative contract is
-[`contracts/subject-session.v2.schema.json`](../contracts/subject-session.v2.schema.json).
-The checked
-[`examples/subject-session.v2.json`](../examples/subject-session.v2.json)
-fixture is validated against that contract in the test suite. It is shortened
-to one hand and two telemetry events for readability:
-
-```json
-{
-  "schema_version": "2",
-  "session_id": "session_5f8ccfbf9c21854d9cd4c663",
-  "window_id": "window_1784912400000_a1b2c3d4",
-  "hands": [
-    {
-      "hand_number": 1,
-      "actions": [
-        {
-          "sequence": 0,
-          "event_type": "PLAYER_CALL",
-          "action_type": "call",
-          "phase": "PREFLOP",
-          "amount": 50,
-          "call_amount": 50,
-          "raise_to": null,
-          "is_all_in": false,
-          "pot_size": 125,
-          "current_bet": 50,
-          "player_stack": 14950,
-          "active_players": 6,
-          "seat_position": 2,
-          "position_name": "MP",
-          "community_cards": [],
-          "hole_cards": ["As", "Kd"],
-          "decision_time_ms": 1432,
-          "time_since_last_action_ms": 3761,
-          "session_offset_ms": 0
-        }
-      ]
-    }
-  ],
-  "telemetry": {
-    "events": [
-      {
-        "sequence": 0,
-        "offset_ms": 0,
-        "event_type": "pointer_move",
-        "target_category": "poker_action",
-        "value": {
-          "pointer": "mouse",
-          "x_bucket": 4,
-          "y_bucket": 6
-        }
-      },
-      {
-        "sequence": 1,
-        "offset_ms": 418,
-        "event_type": "click",
-        "target_category": "poker_action",
-        "value": {
-          "button": 0
-        }
-      }
-    ],
-    "summary": {
-      "event_count": 2,
-      "action_count": 1,
-      "duration_ms": 18421,
-      "decision_count": 1,
-      "decision_mean_ms": 1432.0,
-      "decision_std_ms": 0.0
-    }
-  }
-}
-```
-
-### Poker action fields
-
-Each hand contains an ordered `actions` list. Important fields include:
-
-| Field | Meaning |
-| --- | --- |
-| `action_type` | `fold`, `check`, `call`, `bet`, `raise`, or `all_in` |
-| `phase` | Street at the moment of the decision |
-| `amount`, `call_amount`, `raise_to` | Chip amounts describing the action |
-| `pot_size`, `current_bet`, `player_stack` | Betting context at decision time |
-| `active_players` | Players still active in the hand |
-| `seat_position`, `position_name` | Subject position for the action |
-| `community_cards`, `hole_cards` | Available card context; values may be `null` |
-| `decision_time_ms` | Time used for the decision |
-| `time_since_last_action_ms` | Gap from the preceding table action |
-| `session_offset_ms` | Relative time from the first retained action |
-
-Models must tolerate nullable and optional context. Do not assume every action
-contains card, stack, amount or timing values.
-
-### Telemetry event fields
-
-Version 2 exposes only these event types:
-
-- `click`
-- `pointer_down`
-- `pointer_move`
-- `scroll`
-- `focus_in`
-- `visibility`
-
-Raw DOM targets are reduced to `target_category`:
-
-- `poker_action`
-- `navigation`
-- `control`
-- `other`
-- `null`
-
-Raw coordinates are not exposed. Only allowlisted values such as
-`x_bucket`, `y_bucket`, `pointer`, `button` and `visible` may appear. Event
-timestamps are relative offsets; wall-clock timestamps and the original event
-source are removed.
-
-The `summary` object provides session-level activity and decision statistics.
-Miners may use raw events, summary fields, poker actions, or any combination of
-them.
+The contract intentionally contains no hands, raw telemetry, clocks, cards,
+chip amounts, tournament results or source identifiers. Each decision exposes
+only `phase`, `position_group`, `pressure`, `action_type`, `size_bucket` and
+`is_all_in`, plus its one-based decision number.
 
 ## Privacy and label separation
 
-The miner-visible boundary pseudonymizes `session_id` per evaluation window and
-removes cross-window and platform identifiers. Absolute action timestamps are
-replaced by `session_offset_ms`; telemetry offsets are rebased to start at zero.
+The miner-visible boundary creates an opaque `item_id` per evaluation window
+and removes cross-window and platform identifiers.
 
 The following internal fields are forbidden recursively from miner payloads:
 
@@ -338,9 +213,8 @@ The following internal fields are forbidden recursively from miner payloads:
 - `bot_family`, `capture_source`, `collector_version`
 - `simulation`, `session_index`
 - `tournament_id`, `user_id`
-- raw telemetry `source`
 
-Miners should also treat `session_id`, `window_id`, array order, hashes and
+Miners should also treat `item_id`, `window_id`, array order, hashes and
 pagination or request timing as metadata, not model features. These values are
 not stable behavioral signals and using them encourages leakage and
 overfitting.
@@ -351,8 +225,8 @@ overfitting.
 | --- | --- |
 | A miner could join a later competition round | There are no joinable competition rounds |
 | Evaluations followed an announced round schedule | Requests occur only when a sealed data window exists |
-| Inputs focused primarily on poker hands | Inputs are multi-hand sessions with extended action context and telemetry |
-| A round was a participant-facing competition phase | `round` in legacy code means only an internal validator evaluation cycle |
+| Inputs focused primarily on poker hands | Inputs are four coarse strategic decisions |
+| A round was a participant-facing competition phase | `round_id` means only an internal validator evaluation cycle |
 | Models could assume the old chunk structure | Models must consume the versioned subject-session contract |
 
 The miner's operational responsibility remains the same: keep the axon
@@ -368,8 +242,7 @@ Before running the tournament-based release:
 2. Configure `POKER44_MODEL_FACTORY=your_package.module:create_model`.
 3. Ensure the factory returns an object with `version`, `load()` and
    `predict(sessions)`.
-4. Accept strategic subject-session `schema_version: "3"`. The subnet boundary
-   also accepts legacy versions 1 and 2 during migration.
+4. Accept only `schema_version: "4.1"` through `MicroSessionDetectionSynapse`.
 5. Parse a list of sessions containing `decisions`.
 6. Produce exactly one score per session and preserve input order.
 7. Return finite values in `[0, 1]`; do not return only class labels.

@@ -13,27 +13,25 @@ from poker44.platform.models import SessionLease
 from poker44.utils.runtime_info import build_signed_runtime_request
 
 
+class SubnetDataHttpError(RuntimeError):
+    def __init__(self, status: int, detail: str):
+        super().__init__(f"subnet data http_{status}: {detail}")
+        self.status = status
+
+
 @dataclass(frozen=True)
 class SubnetDataConfig:
     base_url: str
     timeout_seconds: float
-    requested_sessions: int
 
     @classmethod
     def from_env(cls) -> "SubnetDataConfig":
-        # One standard Poker44 tournament has 20 seats (10 human, 10 bot).
-        # Keep the legacy variable name during migration, but default one
-        # validator request to one complete tournament-sized window.
-        requested = int(os.getenv("POKER44_VALIDATOR_SESSIONS_PER_ROUND", "20"))
-        if requested <= 0:
-            raise ValueError("POKER44_VALIDATOR_SESSIONS_PER_ROUND must be positive")
         base_url = os.getenv("POKER44_SUBNET_DATA_URL", "https://api.poker44.net")
         return cls(
             base_url=base_url.strip().rstrip("/"),
             timeout_seconds=float(
                 os.getenv("POKER44_SUBNET_DATA_TIMEOUT_SECONDS", "30")
             ),
-            requested_sessions=requested,
         )
 
 
@@ -73,7 +71,7 @@ class SubnetDataClient:
                 decoded = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
-            raise RuntimeError(f"subnet data http_{exc.code}: {detail}") from exc
+            raise SubnetDataHttpError(exc.code, detail) from exc
         if isinstance(decoded, dict) and decoded.get("success") is True:
             return decoded.get("data")
         return decoded
@@ -86,10 +84,7 @@ class SubnetDataClient:
         result = self._request(
             "POST",
             "/api/v1/evaluation/leases",
-            {
-                "window_id": window_id,
-                "requested_sessions": self.config.requested_sessions,
-            },
+            {"window_id": window_id},
         )
         return SessionLease.from_payload(result)
 
@@ -99,3 +94,37 @@ class SubnetDataClient:
             f"/api/v1/evaluation/leases/{lease_id}/complete",
             {"round_id": round_id},
         )
+
+    def claim_evaluation_run(self, window_id: str, round_id: str) -> dict[str, Any]:
+        result = self._request(
+            "POST",
+            "/api/v1/evaluation/evaluation-runs/claim",
+            {"window_id": window_id, "round_id": round_id},
+        )
+        if not isinstance(result, dict) or not str(result.get("state") or ""):
+            raise RuntimeError("subnet data returned an invalid evaluation run")
+        return result
+
+    def advance_evaluation_run(
+        self,
+        window_id: str,
+        round_id: str,
+        state: str,
+        evidence: dict[str, Any] | None = None,
+    ) -> bool:
+        try:
+            self._request(
+                "POST",
+                "/api/v1/evaluation/evaluation-runs/advance",
+                {
+                    "window_id": window_id,
+                    "round_id": round_id,
+                    "state": state,
+                    "evidence": evidence or {},
+                },
+            )
+            return True
+        except SubnetDataHttpError as exc:
+            if exc.status == 409:
+                return False
+            raise

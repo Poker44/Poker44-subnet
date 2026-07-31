@@ -1,62 +1,36 @@
 import pytest
+from pydantic import ValidationError
 
-from poker44.protocol import SessionDetectionSynapse, validate_session_request
+from poker44.protocol import MicroSessionDetectionSynapse, validate_micro_session_request
 
 
-def test_session_synapse_has_no_ground_truth_field():
-    synapse = SessionDetectionSynapse(
-        window_id="window-1",
+def test_micro_session_is_the_only_signed_contract():
+    synapse = MicroSessionDetectionSynapse(
+        window_id="window",
         dataset_hash="a" * 64,
-        sessions=[
-            {
-                "schema_version": "2",
-                "session_id": "session-1",
-                "window_id": "window-1",
-                "hands": [{"actions": []}],
-                "telemetry": {"events": [], "summary": {}},
-            }
-        ],
+        query_id="query",
+        items=[{"schema_version": "4.1"}],
     )
-
-    assert synapse.window_id == "window-1"
-    assert synapse.dataset_hash == "a" * 64
-    assert len(synapse.sessions) == 1
+    validate_micro_session_request(synapse)
+    assert synapse.contract_version == "microsession-v1"
+    assert "items" in synapse.required_hash_fields
     assert "labels" not in type(synapse).model_fields
-    assert "ground_truth" not in type(synapse).model_fields
 
 
-def test_protocol_v2_request_requires_dataset_hash():
-    synapse = SessionDetectionSynapse(
-        protocol_version="2",
-        window_id="window-1",
-        dataset_hash="a" * 64,
-        sessions=[],
+def test_contract_requires_sha256_dataset_hash():
+    synapse = MicroSessionDetectionSynapse(
+        window_id="window", dataset_hash="", query_id="query",
+        items=[{"schema_version": "4.1"}],
     )
-
-    validate_session_request(synapse)
-
-    synapse.dataset_hash = ""
     with pytest.raises(ValueError, match="dataset_hash"):
-        validate_session_request(synapse)
+        validate_micro_session_request(synapse)
 
 
-def test_legacy_protocol_v1_request_remains_supported():
-    validate_session_request(
-        SessionDetectionSynapse(
-            protocol_version="1",
-            window_id="window-legacy",
-            sessions=[],
-        )
-    )
-
-
-def test_unknown_protocol_version_is_rejected():
-    with pytest.raises(ValueError, match="Unsupported Poker44 protocol version"):
-        validate_session_request(
-            SessionDetectionSynapse(
-                protocol_version="3",
-                window_id="window-1",
-                dataset_hash="a" * 64,
-                sessions=[],
-            )
-        )
+def test_contract_rejects_old_versions_and_schemas():
+    with pytest.raises(ValidationError):
+        MicroSessionDetectionSynapse(contract_version="telemetry-v1")
+    with pytest.raises(ValueError, match="schema 4.1"):
+        validate_micro_session_request(MicroSessionDetectionSynapse(
+            window_id="window", dataset_hash="b" * 64, query_id="query",
+            items=[{"schema_version": "2"}],
+        ))

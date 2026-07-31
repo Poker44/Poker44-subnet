@@ -806,9 +806,6 @@ def test_candidate_selection_uses_resolved_endpoint(monkeypatch):
         endpoint_resolver=FakeResolver(),
         refresh_encrypted_endpoints=lambda: 1,
     )
-    monkeypatch.setenv("POKER44_REQUIRE_MINER_IDENTITY", "false")
-    monkeypatch.setenv("POKER44_MINERS_PER_ROUND", "2")
-
     uids, axons = ValidatorEvaluationMixin._candidate_miners(
         validator, "window-protected"
     )
@@ -851,8 +848,6 @@ def test_disabled_resolver_preserves_public_candidate_behavior(monkeypatch):
             ["uid-zero", "public-hotkey"]
         ),
     )
-    monkeypatch.setenv("POKER44_REQUIRE_MINER_IDENTITY", "false")
-
     uids, axons = ValidatorEvaluationMixin._candidate_miners(
         validator, "window-public"
     )
@@ -891,8 +886,6 @@ def test_candidate_selection_skips_unresolved_masked_endpoint(monkeypatch):
         endpoint_resolver=EmptyResolver(),
         refresh_encrypted_endpoints=lambda: 0,
     )
-    monkeypatch.setenv("POKER44_REQUIRE_MINER_IDENTITY", "false")
-
     uids, axons = ValidatorEvaluationMixin._candidate_miners(
         validator, "window-unresolved"
     )

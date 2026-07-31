@@ -1,8 +1,4 @@
-"""Poker44 miner entrypoint.
-
-Every miner owns and loads its detection model in this process. The axon invokes
-that resident model directly for every ``SessionDetectionSynapse`` request.
-"""
+"""Poker44 micro-session miner entrypoint."""
 
 import time
 from typing import Tuple
@@ -13,7 +9,10 @@ from poker44.base.miner import BaseMinerNeuron
 from poker44.miner.config import MinerModelConfig
 from poker44.miner.loader import load_model
 from poker44.miner.service import MinerInferenceService
-from poker44.protocol import SessionDetectionSynapse, validate_session_request
+from poker44.protocol import (
+    MicroSessionDetectionSynapse,
+    validate_micro_session_request,
+)
 
 
 class Miner(BaseMinerNeuron):
@@ -28,23 +27,25 @@ class Miner(BaseMinerNeuron):
             f"version={self.model.version} device={self.model_config.device}"
         )
 
-    async def forward(
-        self, synapse: SessionDetectionSynapse
-    ) -> SessionDetectionSynapse:
-        validate_session_request(synapse)
-        scores = await self.inference.predict(synapse.sessions)
+    async def forward_micro_sessions(
+        self, synapse: MicroSessionDetectionSynapse
+    ) -> MicroSessionDetectionSynapse:
+        validate_micro_session_request(synapse)
+        scores = await self.inference.predict_micro_sessions(synapse.items)
         synapse.risk_scores = scores
         synapse.predictions = [score >= 0.5 for score in scores]
         synapse.model_version = self.model.version
         bt.logging.info(
-            f"Scored {len(scores)} subject sessions for window={synapse.window_id}"
+            f"Scored {len(scores)} micro-session items for window={synapse.window_id}"
         )
         return synapse
 
-    async def blacklist(self, synapse: SessionDetectionSynapse) -> Tuple[bool, str]:
+    async def blacklist_micro_sessions(
+        self, synapse: MicroSessionDetectionSynapse
+    ) -> Tuple[bool, str]:
         return self.common_blacklist(synapse)
 
-    async def priority(self, synapse: SessionDetectionSynapse) -> float:
+    async def priority_micro_sessions(self, synapse: MicroSessionDetectionSynapse) -> float:
         return self.caller_priority(synapse)
 
 

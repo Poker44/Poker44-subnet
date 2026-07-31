@@ -1,70 +1,14 @@
 from poker44.validator.evaluation.redteam_gate import audit_redteam_leakage
 
 
-def session(pointer_moves: int, *, padding: str = "") -> dict[str, object]:
+def strategic_session(
+    action: str,
+    *,
+    context_shift: bool = False,
+    schema_version: str = "4.1",
+) -> dict[str, object]:
     return {
-        "schema_version": "2",
-        "session_id": "session_example",
-        "window_id": "window_example",
-        "hands": [{"hand_number": index + 1, "actions": []} for index in range(3)],
-        "telemetry": {
-            "events": [
-                {
-                    "sequence": index,
-                    "offset_ms": index * 100,
-                    "event_type": "pointer_move",
-                    "target_category": "other",
-                    "value": {"pointer": "mouse", "x_bucket": 1, "y_bucket": 1},
-                }
-                for index in range(pointer_moves)
-            ],
-            "summary": {"padding": padding},
-        },
-    }
-
-
-def test_gate_rejects_current_pointer_volume_shortcut() -> None:
-    sessions = [session(380), session(520), session(6), session(12)]
-    result = audit_redteam_leakage(sessions, [0, 0, 1, 1], threshold=0.15)
-
-    assert result.passed is False
-    assert result.skipped is False
-    assert result.reward > result.threshold
-    assert result.feature in {"payload_bytes", "telemetry_events", "pointer_moves"}
-    assert result.balanced_accuracy == 1.0
-
-
-def test_gate_accepts_shape_matched_sessions() -> None:
-    sessions = [session(30), session(40), session(30), session(40)]
-    result = audit_redteam_leakage(sessions, [0, 0, 1, 1], threshold=0.15)
-
-    assert result.passed is True
-    assert result.reward == 0.0
-
-
-def test_gate_checks_serialized_size_even_when_event_counts_match() -> None:
-    sessions = [
-        session(20, padding="human-a" * 300),
-        session(20, padding="human-b" * 300),
-        session(20),
-        session(20),
-    ]
-    result = audit_redteam_leakage(sessions, [0, 0, 1, 1], threshold=0.15)
-
-    assert result.passed is False
-    assert result.feature == "payload_bytes"
-
-
-def test_gate_skips_single_class_operational_windows() -> None:
-    result = audit_redteam_leakage([session(20), session(20)], [1, 1])
-
-    assert result.skipped is True
-    assert result.passed is False
-
-
-def strategic_session(action: str, *, context_shift: bool = False) -> dict[str, object]:
-    return {
-        "schema_version": "3",
+        "schema_version": schema_version,
         "session_id": f"session_{action}_{context_shift}",
         "window_id": "window_example",
         "decisions": [
@@ -110,3 +54,35 @@ def test_gate_rejects_v3_context_distribution_shortcuts() -> None:
 
     assert result.passed is False
     assert result.feature == "strategic_context_signature"
+
+
+def test_gate_accepts_multiple_contexts_when_balanced_per_class() -> None:
+    sessions = [
+        strategic_session("check"),
+        strategic_session("call", context_shift=True),
+        strategic_session("raise"),
+        strategic_session("fold", context_shift=True),
+    ]
+
+    result = audit_redteam_leakage(sessions, [0, 0, 1, 1], threshold=0.15)
+
+    assert result.passed is True
+    assert result.reward == 0.0
+
+
+def test_v41_matches_phase_pressure_but_audits_global_position_balance() -> None:
+    sessions = [
+        strategic_session("check", schema_version="4.1"),
+        strategic_session("call", schema_version="4.1"),
+        strategic_session("raise", schema_version="4.1"),
+        strategic_session("fold", schema_version="4.1"),
+    ]
+    for item in sessions:
+        item["decisions"] = item["decisions"][:4]
+    for decision in sessions[2]["decisions"] + sessions[3]["decisions"]:
+        decision["position_group"] = "early"
+
+    result = audit_redteam_leakage(sessions, [0, 0, 1, 1], threshold=0.15)
+
+    assert result.passed is False
+    assert result.feature == "strategic_position_distribution"

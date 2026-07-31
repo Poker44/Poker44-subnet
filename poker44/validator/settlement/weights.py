@@ -1,43 +1,71 @@
-"""Convert non-negative validator-local scores into a weight preview."""
+"""Deterministic winner-takes-all weight construction."""
 
 from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
 
-def retain_top_scores(scores: np.ndarray, max_winners: int = 10) -> np.ndarray:
-    """Keep at most the strongest positive scores with deterministic UID ties."""
-    if max_winners <= 0:
-        raise ValueError("max_winners must be positive")
-    clean = np.clip(
-        np.nan_to_num(np.asarray(scores, dtype=float), nan=0.0, posinf=0.0, neginf=0.0),
-        0.0,
-        None,
-    )
-    positive = np.flatnonzero(clean > 0.0)
-    ranked = sorted(positive.tolist(), key=lambda uid: (-clean[uid], uid))
-    retained = np.zeros_like(clean)
-    winners = ranked[:max_winners]
-    retained[winners] = clean[winners]
-    return retained
+def winner_uid(evaluations: Sequence[Any]) -> int | None:
+    """Return the highest positive finite score, breaking exact ties by UID."""
 
-
-def normalized_weight_rows(
-    scores: np.ndarray, max_winners: int = 10
-) -> list[dict[str, float | int]]:
-    clean = retain_top_scores(scores, max_winners=max_winners)
-    total = float(clean.sum())
-    if total <= 0.0:
-        return []
-    return [
-        {"uid": int(uid), "weight": float(value / total)}
-        for uid, value in enumerate(clean)
-        if value > 0.0
+    candidates = [
+        (float(item.quality_score), int(item.uid))
+        for item in evaluations
+        if np.isfinite(float(item.quality_score)) and float(item.quality_score) > 0.0
     ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda row: (-row[0], row[1]))[1]
+
+
+def ranked_score_rows(evaluations: Sequence[Any]) -> list[dict[str, Any]]:
+    """Serialize every miner score and its binary round reward."""
+
+    clean = sorted(
+        evaluations,
+        key=lambda item: (
+            -float(item.quality_score)
+            if np.isfinite(float(item.quality_score))
+            else 0.0,
+            int(item.uid),
+        ),
+    )
+    winner = winner_uid(evaluations)
+    return [
+        {
+            "uid": int(item.uid),
+            "hotkey": str(item.hotkey),
+            "quality_score": (
+                float(item.quality_score)
+                if np.isfinite(float(item.quality_score))
+                else 0.0
+            ),
+            "rank": index + 1,
+            "round_reward": 1.0 if int(item.uid) == winner else 0.0,
+            "is_winner": int(item.uid) == winner,
+            "metrics": dict(item.metrics),
+            "model_version": item.model_version,
+            "error": item.error,
+        }
+        for index, item in enumerate(clean)
+    ]
+
+
+def one_hot_scores(size: int, uid: int | None) -> np.ndarray:
+    scores = np.zeros(size, dtype=np.float32)
+    if uid is not None:
+        if uid < 0 or uid >= size:
+            raise ValueError("winner UID is outside the metagraph")
+        scores[uid] = 1.0
+    return scores
 
 
 def weight_rows(prepared_weights) -> list[dict[str, float | int]]:
     """Serialize the exact SDK-processed vector used for chain submission."""
+
     if prepared_weights is None:
         return []
     uids, weights, _uint_uids, _uint_weights = prepared_weights

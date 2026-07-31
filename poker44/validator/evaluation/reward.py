@@ -23,15 +23,18 @@ class RewardResult:
 
 
 def _recall_at_fpr(
-    scores: np.ndarray, labels: np.ndarray, max_fpr: float
+    scores: np.ndarray,
+    labels: np.ndarray,
+    max_fpr: float,
+    sample_weights: np.ndarray,
 ) -> tuple[float, float]:
-    positives = int(np.sum(labels == 1))
-    negatives = int(np.sum(labels == 0))
-    if positives == 0 or negatives == 0:
+    positives = float(np.sum(sample_weights[labels == 1]))
+    negatives = float(np.sum(sample_weights[labels == 0]))
+    if positives <= 0.0 or negatives <= 0.0:
         return 0.0, 1.0
     order = np.argsort(-scores, kind="mergesort")
-    tp = 0
-    fp = 0
+    tp = 0.0
+    fp = 0.0
     best_recall = 0.0
     observed_fpr = 0.0
     cursor = 0
@@ -40,9 +43,9 @@ def _recall_at_fpr(
         end = cursor
         while end < len(order) and scores[order[end]] == threshold:
             if labels[order[end]] == 1:
-                tp += 1
+                tp += float(sample_weights[order[end]])
             else:
-                fp += 1
+                fp += float(sample_weights[order[end]])
             end += 1
         fpr = fp / negatives
         if fpr <= max_fpr:
@@ -57,6 +60,7 @@ def reward(
     labels: list[int],
     *,
     allow_single_class: bool = False,
+    sample_weights: list[float] | None = None,
 ) -> RewardResult:
     scores = np.asarray(predictions, dtype=float)
     truth = np.asarray(labels, dtype=int)
@@ -66,15 +70,27 @@ def reward(
         raise ValueError("Predictions must be finite values in [0, 1]")
     if set(np.unique(truth).tolist()) - {0, 1}:
         raise ValueError("Labels must be binary")
+    weights = (
+        np.ones(scores.shape, dtype=float)
+        if sample_weights is None
+        else np.asarray(sample_weights, dtype=float)
+    )
+    if weights.shape != scores.shape:
+        raise ValueError("Sample weights must align with predictions")
+    if np.any(~np.isfinite(weights)) or np.any(weights <= 0.0):
+        raise ValueError("Sample weights must be finite positive values")
+    weights = weights / float(np.sum(weights))
     if len(np.unique(truth)) < 2:
         if not allow_single_class:
             return RewardResult(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0)
         # Operational bot-only E2E windows cannot measure ranking skill. They
         # can still verify that miners classify the sole observed class. Keep
         # this opt-in and report no AP/recall skill to avoid conflating the two.
-        brier = float(np.mean(np.square(scores - truth)))
+        brier = float(np.average(np.square(scores - truth), weights=weights))
         class_score = float(np.clip(1.0 - brier, 0.0, 1.0))
-        accuracy = float(np.mean((scores >= 0.5).astype(int) == truth))
+        accuracy = float(
+            np.average((scores >= 0.5).astype(int) == truth, weights=weights)
+        )
         return RewardResult(
             class_score,
             0.0,
@@ -85,17 +101,25 @@ def reward(
             accuracy,
         )
 
-    average_precision = float(average_precision_score(truth, scores))
-    prevalence = float(np.mean(truth))
+    average_precision = float(
+        average_precision_score(truth, scores, sample_weight=weights)
+    )
+    prevalence = float(np.average(truth, weights=weights))
     average_precision_skill = max(
         0.0,
         (average_precision - prevalence) / max(1e-12, 1.0 - prevalence),
     )
-    recall, observed_fpr = _recall_at_fpr(scores, truth, max_fpr=0.05)
-    brier = float(np.mean(np.square(scores - truth)))
-    baseline_brier = float(np.mean(np.square(prevalence - truth)))
+    recall, observed_fpr = _recall_at_fpr(
+        scores, truth, max_fpr=0.05, sample_weights=weights
+    )
+    brier = float(np.average(np.square(scores - truth), weights=weights))
+    baseline_brier = float(
+        np.average(np.square(prevalence - truth), weights=weights)
+    )
     brier_skill = max(0.0, 1.0 - brier / max(1e-12, baseline_brier))
-    accuracy = float(np.mean((scores >= 0.5).astype(int) == truth))
+    accuracy = float(
+        np.average((scores >= 0.5).astype(int) == truth, weights=weights)
+    )
     final = float(
         np.clip(
             0.50 * average_precision_skill + 0.30 * recall + 0.20 * brier_skill,

@@ -50,7 +50,8 @@ class Validator(
                 1.0, float(os.getenv("POKER44_ROUND_FAILURE_BACKOFF_SECONDS", "60"))
             ),
             backoff_max_seconds=max(
-                1.0, float(os.getenv("POKER44_ROUND_FAILURE_BACKOFF_MAX_SECONDS", "900"))
+                1.0,
+                float(os.getenv("POKER44_ROUND_FAILURE_BACKOFF_MAX_SECONDS", "900")),
             ),
         )
         # Millisecond epoch makes ordering survive process restarts while the
@@ -61,12 +62,12 @@ class Validator(
         )
         bt.logging.info(
             f"Poker44 Validator v{__version__} started | "
-            f"session_api={self.subnet_data_config.base_url} "
-            f"sessions_per_round={self.subnet_data_config.requested_sessions}"
+            f"session_api={self.subnet_data_config.base_url}"
         )
 
     async def forward(self) -> None:
         await self._reconcile_pending_weight_reveals()
+        await self._attempt_pending_weight_settlement()
         validation_round = await self._start_validation_round()
         if validation_round is None:
             await asyncio.sleep(self.poll_interval)

@@ -9,7 +9,7 @@ def make_round(round_id: str = "round-1") -> ValidationRound:
             window_id=round_id,
             dataset_hash="hash",
             expires_at="2099-01-01T00:00:00Z",
-            sessions=[LeasedSession(payload={"session_id": "s1"}, is_bot=True)],
+            sessions=[LeasedSession(payload={"item_id": "i1", "schema_version": "4.1"}, is_bot=True)],
         )
     )
 

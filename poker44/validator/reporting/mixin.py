@@ -27,7 +27,7 @@ class ValidatorReportingMixin:
             or str(self.config.wallet.name).strip()
         )[:128] or None
         event = {
-            "schema_version": "2",
+            "schema_version": "3",
             "event_id": uuid4().hex,
             "round_id": validation_round.round_id,
             "sequence": sequence,
