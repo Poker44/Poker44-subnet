@@ -8,24 +8,7 @@ import hashlib
 import json
 from typing import Any
 
-
-def _find_forbidden(value: Any, path: str) -> list[str]:
-    forbidden = {"is_bot", "is_human", "ground_truth", "label", "bot_family"}
-    if isinstance(value, dict):
-        leaked: list[str] = []
-        for key, child in value.items():
-            child_path = f"{path}.{key}"
-            if str(key).lower() in forbidden:
-                leaked.append(child_path)
-            leaked.extend(_find_forbidden(child, child_path))
-        return leaked
-    if isinstance(value, list):
-        return [
-            item
-            for index, child in enumerate(value)
-            for item in _find_forbidden(child, f"{path}[{index}]")
-        ]
-    return []
+from poker44.contracts import find_forbidden, validate_v4_micro_session
 
 
 def canonical_dataset_hash(sessions: list[dict[str, Any]]) -> str:
@@ -73,7 +56,7 @@ class SessionLease:
             if not isinstance(item.get("is_bot"), bool):
                 raise ValueError(f"sessions[{index}] has no boolean ground truth")
             miner_payload = dict(item["payload"])
-            leaked = _find_forbidden(miner_payload, f"sessions[{index}].payload")
+            leaked = find_forbidden(miner_payload, f"sessions[{index}].payload")
             if leaked:
                 raise ValueError(
                     f"sessions[{index}].payload leaks labels: {sorted(leaked)}"
@@ -83,6 +66,7 @@ class SessionLease:
                 raise ValueError(
                     f"sessions[{index}] must use micro-session schema {expected_schema}"
                 )
+            validate_v4_micro_session(miner_payload, index)
             item_id = str(miner_payload.get(id_field) or "").strip()
             if not item_id or item_id in seen_item_ids:
                 raise ValueError(

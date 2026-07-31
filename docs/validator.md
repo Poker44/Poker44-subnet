@@ -7,8 +7,11 @@ deduplicated.
 
 Quality is `0.50 * AP skill + 0.30 * recall@5% FPR + 0.20 * Brier skill`.
 Highest positive finite quality wins, with ascending UID as the exact-tie
-breaker. The target vector is exactly one-hot and is rejected if live SDK or
-subnet constraints transform it. Only a new valid round changes the target.
+breaker. The transition target assigns `POKER44_BURN_FRACTION` (default 90%)
+to the live subnet owner hotkey, `POKER44_FUNDING_FRACTION` (default 5%) to
+`POKER44_FUNDING_HOTKEY`, and the remainder to the winner. The funding hotkey
+must be registered and different from the owner. Only a new valid round changes
+the target.
 The same target is refreshed every `POKER44_WEIGHT_REFRESH_BLOCKS` (default
 720), subject to the chain rate limit and commit-reveal lifecycle.
 

@@ -9,7 +9,7 @@ import math
 from typing import Any
 
 from poker44.miner.config import MinerModelConfig
-from poker44.miner.contracts import find_forbidden, validate_v4_micro_session
+from poker44.contracts import find_forbidden, validate_v4_micro_session
 from poker44.miner.model import BotDetectionModel
 
 

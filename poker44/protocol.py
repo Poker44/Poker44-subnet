@@ -7,6 +7,8 @@ from typing import Any, ClassVar, Literal
 import bittensor as bt
 from pydantic import ConfigDict, Field
 
+from poker44.contracts import find_forbidden, validate_v4_micro_session
+
 
 class MicroSessionDetectionSynapse(bt.Synapse):
     """Classify audited schema-v4.1 tournament micro-sessions."""
@@ -53,3 +55,7 @@ def validate_micro_session_request(synapse: MicroSessionDetectionSynapse) -> Non
     for index, item in enumerate(synapse.items):
         if not isinstance(item, dict) or str(item.get("schema_version")) != "4.1":
             raise ValueError(f"items[{index}] must use schema 4.1")
+        leaked = find_forbidden(item, f"items[{index}]")
+        if leaked:
+            raise ValueError(f"items[{index}] contains forbidden fields: {sorted(leaked)}")
+        validate_v4_micro_session(item, index)

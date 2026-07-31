@@ -1,4 +1,4 @@
-"""Deterministic winner-takes-all weight construction."""
+"""Deterministic transition-period emission allocation."""
 
 from __future__ import annotations
 
@@ -6,6 +6,16 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+
+
+def winner_fraction(burn_fraction: float, funding_fraction: float) -> float:
+    fractions = np.asarray([burn_fraction, funding_fraction], dtype=np.float64)
+    if not np.all(np.isfinite(fractions)) or np.any(fractions < 0.0):
+        raise ValueError("emission fractions must be finite and non-negative")
+    remaining = 1.0 - float(fractions.sum())
+    if remaining <= 0.0:
+        raise ValueError("burn and funding fractions must leave a positive winner reward")
+    return remaining
 
 
 def winner_uid(evaluations: Sequence[Any]) -> int | None:
@@ -54,12 +64,33 @@ def ranked_score_rows(evaluations: Sequence[Any]) -> list[dict[str, Any]]:
     ]
 
 
-def one_hot_scores(size: int, uid: int | None) -> np.ndarray:
-    scores = np.zeros(size, dtype=np.float32)
-    if uid is not None:
+def emission_scores(
+    size: int,
+    *,
+    winner_uid: int,
+    owner_uid: int,
+    funding_uid: int,
+    burn_fraction: float,
+    funding_fraction: float,
+) -> np.ndarray:
+    """Allocate burn, tournament funding and the remaining winner reward."""
+
+    winner_share = winner_fraction(burn_fraction, funding_fraction)
+    targets = {
+        "winner": int(winner_uid),
+        "owner": int(owner_uid),
+        "funding": int(funding_uid),
+    }
+    for role, uid in targets.items():
         if uid < 0 or uid >= size:
-            raise ValueError("winner UID is outside the metagraph")
-        scores[uid] = 1.0
+            raise ValueError(f"{role} UID is outside the metagraph")
+    if owner_uid == funding_uid:
+        raise ValueError("funding hotkey must be different from the subnet owner")
+
+    scores = np.zeros(size, dtype=np.float32)
+    scores[owner_uid] += float(burn_fraction)
+    scores[funding_uid] += float(funding_fraction)
+    scores[winner_uid] += winner_share
     return scores
 
 

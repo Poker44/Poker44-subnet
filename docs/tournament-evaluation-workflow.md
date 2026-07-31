@@ -182,9 +182,10 @@ is insufficient because calibration is part of validator scoring.
 ### 7. Validator scoring and settlement
 
 The validator keeps labels locally, validates the response, computes quality,
-selects the deterministic winner and submits its one-hot target when cadence permits. The
-dashboard receives signed observability events only; it does not calculate or
-provide weights.
+selects the deterministic winner and submits the transition allocation when
+cadence permits: 90% to the live subnet owner, 5% to the configured tournament
+funding hotkey and 5% to the winner by default. The dashboard receives signed
+observability events only; it does not calculate or provide weights.
 
 An invalid response, missing response, wrong output length, non-finite value or
 out-of-range score receives zero reward for that evaluation cycle.

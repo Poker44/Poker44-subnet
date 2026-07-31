@@ -7,6 +7,21 @@ from poker44.platform.models import (
 )
 
 
+def decisions():
+    return [
+        {
+            "decision_number": index + 1,
+            "phase": "flop" if index == 0 else "preflop",
+            "position_group": "late",
+            "pressure": "no_call",
+            "action_type": "check",
+            "size_bucket": "not_applicable",
+            "is_all_in": False,
+        }
+        for index in range(4)
+    ]
+
+
 def lease_payload():
     payload = {
         "lease_id": "lease-1",
@@ -21,6 +36,7 @@ def lease_payload():
                     "schema_version": "4.1",
                     "item_id": "human-1",
                     "window_id": "window-1",
+                    "decisions": decisions(),
                 },
             },
             {
@@ -30,6 +46,7 @@ def lease_payload():
                     "schema_version": "4.1",
                     "item_id": "bot-1",
                     "window_id": "window-1",
+                    "decisions": decisions(),
                 },
             },
         ],
@@ -52,6 +69,16 @@ def test_lease_rejects_label_leak_inside_payload():
     payload = lease_payload()
     payload["sessions"][0]["payload"]["label"] = "human"
     with pytest.raises(ValueError, match="leaks labels"):
+        SessionLease.from_payload(payload)
+
+
+def test_lease_rejects_schema_marker_without_telemetry_decisions():
+    payload = lease_payload()
+    del payload["sessions"][0]["payload"]["decisions"]
+    payload["dataset_hash"] = canonical_dataset_hash(
+        [item["payload"] for item in payload["sessions"]]
+    )
+    with pytest.raises(ValueError, match="micro-session contract"):
         SessionLease.from_payload(payload)
 
 

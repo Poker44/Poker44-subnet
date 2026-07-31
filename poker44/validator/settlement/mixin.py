@@ -15,7 +15,7 @@ from poker44.base.utils.weight_utils import convert_weights_and_uids_for_emit
 from poker44.platform.models import ValidationRound
 from poker44.validator.evaluation.models import MinerEvaluation
 from poker44.validator.settlement.weights import (
-    one_hot_scores,
+    emission_scores,
     ranked_score_rows,
     weight_rows,
     winner_uid,
@@ -23,6 +23,53 @@ from poker44.validator.settlement.weights import (
 
 
 class ValidatorSettlementMixin:
+    def _funding_hotkey(self) -> str:
+        hotkey = str(getattr(self.config.neuron, "funding_hotkey", "") or "").strip()
+        if not hotkey:
+            raise RuntimeError("POKER44_FUNDING_HOTKEY is required")
+        return hotkey
+
+    def _uid_for_hotkey(self, hotkey: str, role: str) -> int:
+        try:
+            return list(self.metagraph.hotkeys).index(hotkey)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Configured {role} hotkey is not registered on netuid {self.config.netuid}"
+            ) from exc
+
+    async def _emission_target(self, winner: int) -> tuple[np.ndarray, dict]:
+        owner_hotkey = str(
+            await asyncio.to_thread(
+                self.subtensor.get_subnet_owner_hotkey, self.config.netuid
+            )
+        )
+        funding_hotkey = self._funding_hotkey()
+        owner_uid = self._uid_for_hotkey(owner_hotkey, "owner")
+        funding_uid = self._uid_for_hotkey(funding_hotkey, "funding")
+        burn_fraction = float(self.config.neuron.burn_fraction)
+        funding_fraction = float(self.config.neuron.funding_fraction)
+        raw_weights = emission_scores(
+            int(self.metagraph.n),
+            winner_uid=winner,
+            owner_uid=owner_uid,
+            funding_uid=funding_uid,
+            burn_fraction=burn_fraction,
+            funding_fraction=funding_fraction,
+        )
+        return raw_weights, {
+            "owner": {"uid": owner_uid, "hotkey": owner_hotkey, "fraction": burn_fraction},
+            "funding": {
+                "uid": funding_uid,
+                "hotkey": funding_hotkey,
+                "fraction": funding_fraction,
+            },
+            "winner": {
+                "uid": winner,
+                "hotkey": str(self.metagraph.hotkeys[winner]),
+                "fraction": 1.0 - burn_fraction - funding_fraction,
+            },
+        }
+
     def _weight_settlement_state_path(self) -> Path:
         configured = os.getenv("POKER44_WEIGHT_SETTLEMENT_PATH", "").strip()
         if configured:
@@ -386,7 +433,7 @@ class ValidatorSettlementMixin:
             )
             if not expected_hotkey or current_hotkey != expected_hotkey:
                 bt.logging.error(
-                    "Weight target is stale because its winning hotkey is no longer "
+                    "Weight target is stale because its hotkey is no longer "
                     f"registered at uid={uid}; preserving target without substitution"
                 )
                 return False
@@ -520,15 +567,27 @@ class ValidatorSettlementMixin:
                 {"error": "no_positive_finite_quality_score", "terminal": True},
             )
             return {"weights": [], "submitted": False, "scores": score_rows}
-        raw_weights = one_hot_scores(int(self.metagraph.n), winner)
+        raw_weights, allocation = await self._emission_target(winner)
         prepared_weights = await asyncio.to_thread(self.prepare_weights, raw_weights)
         weights = weight_rows(prepared_weights)
         for row in weights:
             row["hotkey"] = str(self.metagraph.hotkeys[int(row["uid"])])
+            row["roles"] = [
+                role
+                for role, target in allocation.items()
+                if int(target["uid"]) == int(row["uid"])
+            ]
         await self._report_event(
-            "weights_computed", validation_round, {"weights": weights}
+            "weights_computed",
+            validation_round,
+            {"weights": weights, "allocation": allocation},
         )
         if weights:
             self._record_weight_settlement(validation_round, weights)
         submitted = await self._attempt_pending_weight_settlement()
-        return {"weights": weights, "submitted": submitted, "scores": score_rows}
+        return {
+            "weights": weights,
+            "allocation": allocation,
+            "submitted": submitted,
+            "scores": score_rows,
+        }

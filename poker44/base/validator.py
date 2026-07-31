@@ -343,10 +343,20 @@ class BaseValidatorNeuron(BaseNeuron):
             weights=processed_weights,
         )
         nonzero = np.flatnonzero(np.asarray(processed_weights) > 0.0)
-        if len(nonzero) != 1 or not np.isclose(float(np.sum(processed_weights)), 1.0):
+        if not 1 <= len(nonzero) <= 3 or not np.isclose(
+            float(np.sum(processed_weights)), 1.0
+        ):
             raise RuntimeError(
-                "Live subnet constraints transformed winner-takes-all into a "
-                f"non one-hot vector (nonzero={len(nonzero)})"
+                "Live subnet constraints produced an invalid transition allocation "
+                f"(nonzero={len(nonzero)})"
+            )
+        processed_vector = np.zeros_like(raw_weights, dtype=np.float32)
+        processed_vector[np.asarray(processed_uids, dtype=np.int64)] = np.asarray(
+            processed_weights, dtype=np.float32
+        )
+        if not np.allclose(processed_vector, raw_weights, rtol=0.0, atol=1e-6):
+            raise RuntimeError(
+                "Live subnet constraints changed the configured emission fractions"
             )
         return processed_uids, processed_weights, uint_uids, uint_weights
 

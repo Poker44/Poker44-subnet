@@ -19,6 +19,7 @@ from poker44.validator.evaluation.mixin import ValidatorEvaluationMixin
 from poker44.validator.reporting.client import DashboardReportingClient
 from poker44.validator.reporting.mixin import ValidatorReportingMixin
 from poker44.validator.settlement.mixin import ValidatorSettlementMixin
+from poker44.validator.settlement.weights import winner_fraction
 
 load_dotenv()
 
@@ -37,11 +38,16 @@ class Validator(
 
     def __init__(self):
         cfg = config(Validator)
+        winner_share = winner_fraction(
+            float(cfg.neuron.burn_fraction), float(cfg.neuron.funding_fraction)
+        )
         if int(cfg.neuron.num_concurrent_forwards) != 1:
             raise ValueError(
                 "Poker44 session leases require --neuron.num_concurrent_forwards 1"
             )
         super().__init__(config=cfg)
+        funding_hotkey = self._funding_hotkey()
+        funding_uid = self._uid_for_hotkey(funding_hotkey, "funding")
         self._initialize_platform_client()
         self.dashboard_reporting = DashboardReportingClient(self.wallet)
         self.round_manager = ValidationRoundManager(
@@ -62,7 +68,10 @@ class Validator(
         )
         bt.logging.info(
             f"Poker44 Validator v{__version__} started | "
-            f"session_api={self.subnet_data_config.base_url}"
+            f"session_api={self.subnet_data_config.base_url} "
+            f"burn={float(cfg.neuron.burn_fraction):.4f} "
+            f"funding={float(cfg.neuron.funding_fraction):.4f}@uid{funding_uid} "
+            f"winner={winner_share:.4f}"
         )
 
     async def forward(self) -> None:
