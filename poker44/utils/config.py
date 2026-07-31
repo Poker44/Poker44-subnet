@@ -11,6 +11,8 @@ import traceback
 
 traceback.format_exc()
 
+DEFAULT_FUNDING_HOTKEY = "5DUYX7X2Z9Jizr1NABUFDYV7ruFVNcUmKdxw9HxVP3sN9RUD"
+
 
 def add_args(cls, parser: argparse.ArgumentParser) -> None:
     if parser is None:
@@ -98,7 +100,7 @@ def add_args(cls, parser: argparse.ArgumentParser) -> None:
         type=str,
         default=os.getenv(
             "POKER44_FUNDING_HOTKEY",
-            "5FZD47WhA1UaVicYAr7pGnWb2YQLMD7uViipDYN2r1AJ5ggD",
+            DEFAULT_FUNDING_HOTKEY,
         ),
         help="Registered hotkey receiving the tournament-funding fraction.",
     )
@@ -214,7 +216,7 @@ def _ensure_neuron_config(config: "bt.Config") -> None:
         "funding_fraction": float(os.getenv("POKER44_FUNDING_FRACTION", "0.05")),
         "funding_hotkey": os.getenv(
             "POKER44_FUNDING_HOTKEY",
-            "5FZD47WhA1UaVicYAr7pGnWb2YQLMD7uViipDYN2r1AJ5ggD",
+            DEFAULT_FUNDING_HOTKEY,
         ),
         "axon_off": False,
     }
