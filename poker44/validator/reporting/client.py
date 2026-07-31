@@ -38,6 +38,7 @@ class DashboardReportingClient:
                 )
                 """
             )
+        os.chmod(self.outbox_path, 0o600)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.outbox_path, timeout=10)

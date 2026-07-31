@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from unittest.mock import Mock
 
@@ -19,6 +20,7 @@ def test_dashboard_events_survive_delivery_failure_and_retry(monkeypatch, tmp_pa
     outbox = tmp_path / "dashboard.sqlite3"
     monkeypatch.setenv("POKER44_DASHBOARD_OUTBOX_PATH", str(outbox))
     client = DashboardReportingClient(wallet=object())
+    assert os.stat(outbox).st_mode & 0o777 == 0o600
     client._deliver = Mock(side_effect=RuntimeError("offline"))
 
     with pytest.raises(RuntimeError, match="offline"):
