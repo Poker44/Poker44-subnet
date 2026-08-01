@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Align miner, validator-workflow and training-data documentation with the
+  deployed schema-v4.1 contract.
+- Add canonical `MicroSessionDetectionSynapse` request and response examples.
+- Mark the legacy public hand-chunk benchmark and pre-release dev contract as
+  retired.
+
 ## 0.2.1 - 2026-07-31
 
 - Trigger validator deployment of the production micro-session, 90/5/5

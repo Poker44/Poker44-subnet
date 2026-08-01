@@ -1,22 +1,23 @@
 # Tournament evaluation workflow
 
-Poker44 is moving from scheduled competition rounds to a continuous,
-tournament-sourced evaluation pipeline. This document explains what changes,
-what remains stable, and exactly what a miner model receives.
+Poker44 uses a continuous, tournament-sourced evaluation pipeline. This
+document describes the deployed schema-v4.1 flow and exactly what a miner model
+receives.
 
 ## The short version
 
 - Competition rounds disappear. A miner does not join round 1, round 2, or any
   later tournament stage.
-- Poker tournaments run independently and continuously generate completed
-  hands plus consented interaction telemetry.
+- Poker tournaments run independently and generate completed hands plus
+  consented interaction telemetry inside the platform.
 - The platform waits until it has enough comparable, quality-checked sessions
   to seal an evaluation window.
 - Validators query miners only when a sealed window is available. There is no
   guaranteed daily evaluation schedule; sufficient data may be available after
   one day or after several days.
-- A miner remains online as usual. It receives an ordered list of sanitized
-  subject sessions and returns one calibrated bot-risk score per session.
+- A miner remains online as usual. It receives an ordered list of four-decision
+  micro-sessions, not hands or telemetry, and returns one calibrated bot-risk
+  score per item.
 - Ground truth remains inside the platform-to-validator lease and is removed
   before the Bittensor synapse reaches a miner.
 
@@ -54,38 +55,35 @@ connect to a tournament table.
 ### 3. Session assembly
 
 The platform records durable poker actions and consented telemetry throughout
-play. It assembles a subject session only from completed hands that pass data
-quality checks. In the current tournament collector, a session contains three
-consecutive completed hands for one subject. Miners should not hardcode that
-number: session size is part of the versioned payload and may evolve.
-
-The assembler retains:
+play. These records are private source material used for admission, quality
+control and construction; they are not the miner contract. Source sessions are
+assembled only from completed hands that pass the collection gates. Internally
+the platform may retain:
 
 - poker decisions and the game state visible at each decision;
 - relative decision and action timing;
 - sanitized, bucketed interaction events;
 - aggregate timing and activity statistics.
 
-Incomplete or low-quality chunks are not promoted into the evaluation pool.
+Incomplete or low-quality source sessions are not promoted into the evaluation
+pool.
 Internal engine fixtures, synthetic data and historical private actors are also
 excluded from subnet evaluation windows.
 
-Before sealing, the platform builds the exact miner-visible representation and
-runs a shallow provenance-leak canary over payload size and telemetry-event
-cardinality. A window is withheld if one of those capture-shape features can
-separate humans from agents above the configured balanced-accuracy limit.
-Unscoped page-surface clicks are removed at this boundary; semantic control
-interactions remain available to models.
+Before publication, the platform derives four-decision schema-v4.1 items and
+removes all raw telemetry, timing, cards, exact amounts and provenance. The
+validator independently verifies the strict shape and runs a shallow
+visible-feature red-team gate. A window is withheld if a structural shortcut
+can exceed the configured reward limit.
 
 ### 4. Evaluation-window readiness
 
-Completed sessions accumulate across recurring tournaments. The platform seals
-an immutable window only when its configured quality, comparability and
-diversity requirements are met. Comparable sessions use the same collector
-version and hand count. Window construction also prevents one subject from
-supplying multiple samples to the same window. The standard policy additionally
-prevents the same subject from being reused in later windows, reducing identity
-memorization and repeated-player leakage.
+Eligible source sessions accumulate across recurring tournaments. The platform
+seals an immutable window only when its configured quality, comparability and
+diversity requirements are met. Each source decision is single-use inside the
+published window. A private per-actor cap prevents prolific players from
+dominating the dataset, and scoring later gives equal mass to each private
+actor within each class. Actor identities never enter miner payloads.
 
 This makes evaluation data-driven rather than calendar-driven:
 
@@ -93,10 +91,10 @@ This makes evaluation data-driven rather than calendar-driven:
 recurring tournaments
         |
         v
-completed hands + telemetry
+private hands + telemetry
         |
         v
-quality-checked subject sessions
+quality-checked source sessions
         |
         v
 enough comparable sessions?
@@ -115,12 +113,12 @@ evaluation request and continue polling. Depending on tournament volume, the
 next window may become available in one day, three days, four days, or another
 data-dependent interval.
 
-The standard deployment profile seals a 20-session window: 10 eligible human
-sessions and 10 eligible bot sessions from at least one tournament, with bot
-family diversity enforced. With the current three-hand session collector, one
-full 20-seat tournament can therefore produce a complete evaluation window.
-Sessions still have to pass quality and telemetry checks, so registrations or
-raw dealt-hand counts alone do not guarantee readiness.
+The standard production profile targets 200 items, requires at least 80 items
+and 10 private actors per class, at least three tournaments, at least five bot
+families and at most 12 items per actor. The separately gated single-tournament
+production profile targets 120 items, requires 60 per class, eight actors per
+class and five bot families, with the same actor cap. Registration counts or
+raw dealt-hand counts alone therefore do not guarantee readiness.
 
 ### 5. Validator lease and miner request
 
@@ -131,13 +129,7 @@ and rejects any mismatch. Before
 constructing the track-specific Synapse, the validator separates the labels
 and sends only the ordered feature payloads.
 
-For strategic v3, the validator verifies that decision counts and the complete
-`phase × position_group × pressure` context multiset are identical across
-subjects. The gate deliberately ignores the chosen action and size bucket,
-which are the intended strategic signal. Any context mismatch stops evaluation
-before a miner receives the snapshot.
-
-For micro-session v4.1, every item has four decisions and at least one
+Every micro-session v4.1 item has four decisions and at least one
 postflop decision. Human and bot items are matched on `phase × pressure`;
 position is balanced globally with a maximum 0.15 class-distribution gap.
 Source decisions are single-use within a window.
@@ -190,7 +182,7 @@ observability events only; it does not calculate or provide weights.
 An invalid response, missing response, wrong output length, non-finite value or
 out-of-range score receives zero reward for that evaluation cycle.
 
-## Miner-visible telemetry micro-session v4.1
+## Miner-visible micro-session v4.1
 
 The normative tournament contract is
 [`contracts/subject-session.v4.1.schema.json`](../contracts/subject-session.v4.1.schema.json).
@@ -239,7 +231,8 @@ participate as players in a community test.
 
 Before running the tournament-based release:
 
-1. Pull the latest `dev` branch.
+1. Pull release `0.2.1` from the `main` branch. Do not target the obsolete
+   `dev@9cd1df5` contract.
 2. Configure `POKER44_MODEL_FACTORY=your_package.module:create_model`.
 3. Ensure the factory returns an object with `version`, `load()` and
    `predict(sessions)`.
@@ -247,16 +240,16 @@ Before running the tournament-based release:
 5. Parse a list of sessions containing `decisions`.
 6. Produce exactly one score per session and preserve input order.
 7. Return finite values in `[0, 1]`; do not return only class labels.
-8. Treat nullable fields, empty arrays and future additive fields defensively.
-9. Do not hardcode the current three-hands-per-session collector setting.
+8. Enforce the strict v4.1 schema: exactly four decisions, current enums and no
+   additional item or decision properties.
+9. Do not depend on the platform's private hand/session collector shape.
 10. Remove features derived from IDs, window metadata, request order or wall
     clock.
 11. Confirm the scored model does not require telemetry, timestamps, cards,
     exact chips or tournament outcomes.
 12. Size inference for the configured session and byte limits.
-13. Avoid classifiers based only on payload byte length or raw event volume;
-    these are monitored as provenance shortcuts and are not stable behavioral
-    features.
+13. Avoid classifiers based only on transport shape or shallow structural
+    counts; these are red-team-tested shortcuts, not stable behavioral signals.
 14. Run the repository tests before deployment:
 
     ```bash

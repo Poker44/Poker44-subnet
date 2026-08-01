@@ -31,6 +31,15 @@ in the original order. `0` means strongest human confidence and `1` means
 strongest bot confidence. The Axon also derives `predictions` at threshold
 `0.5`; validator scoring uses the continuous values, not those booleans.
 
+The complete canonical request and response examples are:
+
+- [`contracts/examples/microsession-request.v1.json`](../contracts/examples/microsession-request.v1.json)
+- [`contracts/examples/microsession-response.v1.json`](../contracts/examples/microsession-response.v1.json)
+
+`window_id`, `dataset_hash`, `query_id`, item IDs and item order are transport
+metadata, not stable model features. The validator supplies all items in one
+request; miners do not download the evaluation window from an HTTP endpoint.
+
 ## Model interface
 
 Set `POKER44_MODEL_FACTORY=module:create_model`. The factory receives a
@@ -82,6 +91,10 @@ keeps its public endpoint rather than becoming unreachable. See
 
 ## Run and verify
 
+The deployed compatibility target is subnet release `0.2.1` from the `main`
+branch. The pre-release `dev@9cd1df5` contract is obsolete and must not be used
+for v4.1 miner implementations.
+
 Configure `WALLET_NAME`, `HOTKEY`, `NETUID` and `AXON_PORT`, then run:
 
 ```bash
@@ -99,3 +112,12 @@ PYTHONPATH=. pytest -q
 After startup, verify registration, Axon reachability, model version, recent
 request logs and incentive on chain. A PM2 `online` state alone is not proof
 that the miner answered a validator request.
+
+## Training corpus status
+
+The legacy public `/api/v1/benchmark` hand-chunk API was retired on 31 July
+2026 and is not part of v3.0. Evaluation requests are label-free schema-v4.1
+micro-sessions. A labeled v4.1 development corpus is planned after telemetry
+and dataset-quality criteria are stable; it is not public at launch and no
+release date or download endpoint should be assumed. Evaluation labels remain
+private to validators regardless of future training-corpus publication.

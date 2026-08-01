@@ -14,4 +14,6 @@ EMA, historical request, repository check, coldkey deduplication or legacy
 evaluation track.
 
 Run `PYTHONPATH=. pytest -q`. See `docs/validator.md`, `docs/miner.md` and
-`docs/tournament-evaluation-workflow.md` for the operational contract.
+`docs/tournament-evaluation-workflow.md` for the operational contract. The
+deployed miner target is release `0.2.1` on `main`; old `dev` documentation and
+the retired hand-chunk benchmark are not compatible with this contract.

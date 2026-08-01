@@ -1,0 +1,51 @@
+{
+  "contract_version": "microsession-v1",
+  "window_id": "window_example_v41",
+  "dataset_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "query_id": "query_example_001",
+  "items": [
+    {
+      "schema_version": "4.1",
+      "item_id": "item_example_001",
+      "window_id": "window_example_v41",
+      "decisions": [
+        {
+          "decision_number": 1,
+          "phase": "preflop",
+          "position_group": "late",
+          "pressure": "no_call",
+          "action_type": "raise",
+          "size_bucket": "half_pot",
+          "is_all_in": false
+        },
+        {
+          "decision_number": 2,
+          "phase": "flop",
+          "position_group": "late",
+          "pressure": "facing_bet",
+          "action_type": "call",
+          "size_bucket": "not_applicable",
+          "is_all_in": false
+        },
+        {
+          "decision_number": 3,
+          "phase": "turn",
+          "position_group": "late",
+          "pressure": "no_call",
+          "action_type": "bet",
+          "size_bucket": "three_quarter_pot",
+          "is_all_in": false
+        },
+        {
+          "decision_number": 4,
+          "phase": "river",
+          "position_group": "late",
+          "pressure": "facing_bet",
+          "action_type": "fold",
+          "size_bucket": "not_applicable",
+          "is_all_in": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "risk_scores": [0.73],
+  "predictions": [true],
+  "model_version": "example-model-1"
+}

@@ -8,3 +8,8 @@ The Bittensor transport is `MicroSessionDetectionSynapse` with
 `contract_version = "microsession-v1"`. There is no version negotiation or
 fallback. Validator observability uses dashboard event schema v3 and never
 controls consensus.
+
+Canonical transport examples are available in
+[`examples/microsession-request.v1.json`](examples/microsession-request.v1.json)
+and
+[`examples/microsession-response.v1.json`](examples/microsession-response.v1.json).
