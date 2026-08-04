@@ -10,6 +10,8 @@ from types import SimpleNamespace
 
 import bittensor as bt
 import numpy as np
+from bittensor.core.chain_data import WeightCommitInfo
+from bittensor.utils import get_mechid_storage_index
 
 from poker44.base.utils.weight_utils import convert_weights_and_uids_for_emit
 from poker44.platform.models import ValidationRound
@@ -207,10 +209,32 @@ class ValidatorSettlementMixin:
         reports.append(record)
         self._save_pending_reveal_reports(reports)
 
-    async def _pending_weight_commits(self) -> list[dict]:
-        commits = await asyncio.to_thread(
-            self.subtensor.get_timelocked_weight_commits, self.config.netuid
+    def _all_timelocked_weight_commits(self) -> list[WeightCommitInfo]:
+        """Read every commit bucket at one finalized chain head.
+
+        Bittensor 10.5.0's convenience method requests a single storage-map
+        record. Timelocked commits can span several reveal-round buckets, so a
+        validator may otherwise miss its own accepted commit.
+        """
+        substrate = self.subtensor.substrate
+        finalized_head = substrate.get_chain_finalised_head()
+        result = substrate.query_map(
+            module="SubtensorModule",
+            storage_function="TimelockedWeightCommits",
+            params=[get_mechid_storage_index(self.config.netuid, 0)],
+            block_hash=finalized_head,
+            page_size=100,
+            max_results=1_000,
         )
+        records = getattr(result, "records", result)
+        return [
+            WeightCommitInfo.from_vec_u8_v2(commit)
+            for _bucket, bucket_commits in records
+            for commit in bucket_commits
+        ]
+
+    async def _pending_weight_commits(self) -> list[dict]:
+        commits = await asyncio.to_thread(self._all_timelocked_weight_commits)
         return [
             {
                 "hotkey": str(hotkey),

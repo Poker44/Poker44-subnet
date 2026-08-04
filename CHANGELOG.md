@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Read all finalized timelocked-weight commit buckets so validators reconcile
+  accepted commits without false missing-commit warnings or redundant retries.
 - Align miner, validator-workflow and training-data documentation with the
   deployed schema-v4.1 contract.
 - Add canonical `MicroSessionDetectionSynapse` request and response examples.

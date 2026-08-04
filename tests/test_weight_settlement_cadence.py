@@ -47,6 +47,43 @@ def _harness(
     return harness
 
 
+@pytest.mark.asyncio
+async def test_pending_commits_reads_every_finalized_storage_bucket(monkeypatch):
+    first = ("other-validator", 100, "cipher-one", 1_000)
+    second = ("validator", 101, "cipher-two", 1_001)
+    result = SimpleNamespace(records=[("bucket-one", [first]), ("bucket-two", [second])])
+    substrate = SimpleNamespace(
+        get_chain_finalised_head=Mock(return_value="0xfinalized"),
+        query_map=Mock(return_value=result),
+    )
+    harness = SimpleNamespace(
+        config=SimpleNamespace(netuid=44),
+        subtensor=SimpleNamespace(substrate=substrate),
+        wallet=SimpleNamespace(hotkey=SimpleNamespace(ss58_address="validator")),
+    )
+    harness._all_timelocked_weight_commits = MethodType(
+        ValidatorSettlementMixin._all_timelocked_weight_commits, harness
+    )
+    monkeypatch.setattr(
+        "poker44.validator.settlement.mixin.WeightCommitInfo.from_vec_u8_v2",
+        lambda commit: commit,
+    )
+
+    commits = await ValidatorSettlementMixin._pending_weight_commits(harness)
+
+    assert commits == [
+        {"hotkey": "validator", "commit_block": 101, "reveal_round": 1_001}
+    ]
+    substrate.query_map.assert_called_once_with(
+        module="SubtensorModule",
+        storage_function="TimelockedWeightCommits",
+        params=[44],
+        block_hash="0xfinalized",
+        page_size=100,
+        max_results=1_000,
+    )
+
+
 def test_new_round_replaces_target_and_keeps_unsettled_run_evidence(tmp_path):
     harness = _harness(tmp_path, current_block=10)
     harness._record_weight_settlement = MethodType(

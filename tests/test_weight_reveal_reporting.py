@@ -10,9 +10,12 @@ class FakeSubtensor:
     def __init__(self, hotkey: str):
         self.hotkey = hotkey
         self.pending = []
-
-    def get_timelocked_weight_commits(self, _netuid):
-        return self.pending
+        self.substrate = SimpleNamespace(
+            get_chain_finalised_head=lambda: "0xfinalized",
+            query_map=lambda **_kwargs: SimpleNamespace(
+                records=[("bucket", self.pending)] if self.pending else []
+            ),
+        )
 
     def metagraph(self, _netuid):
         return SimpleNamespace(hotkeys=[self.hotkey], last_update=[120])
