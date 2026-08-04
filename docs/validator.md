@@ -143,7 +143,7 @@ instead of being stashed or overwritten. Validator secrets remain in the local
 environment and `.env`; the watcher never runs with shell xtrace.
 
 The script defaults to Finney netuid 126, one concurrent forward and deploy
-version `0.2.3`. Before deployment run:
+version `0.2.4`. Before deployment run:
 
 ```bash
 ruff check poker44 neurons tests

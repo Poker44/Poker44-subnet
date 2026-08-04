@@ -1,7 +1,7 @@
 # Poker44 training data and benchmark status
 
 This page documents the training-data status for Poker44 subnet `126` and the
-schema-v4.1 miner contract deployed with subnet release `0.2.3`.
+schema-v4.1 miner contract deployed with subnet release `0.2.4`.
 
 ## Current status
 
@@ -103,5 +103,5 @@ Recommended checks:
 5. Do not use IDs, hashes, order or request timing as behavioral features.
 6. Test probability calibration as well as ranking performance.
 
-The current implementation target is the `main` branch at release `0.2.3`.
+The current implementation target is the `main` branch at release `0.2.4`.
 The old `dev@9cd1df5` hand/telemetry contract is obsolete.

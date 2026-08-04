@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4 - 2026-08-04
+
+- Reissue the validator deployment gate so supervised validators reapply the
+  current `main` release and its 70% owner burn, 5% tournament funding and 25%
+  round-winner defaults.
+- Keep the protocol and miner-visible schema unchanged; this operational
+  release does not claim adoption by validators without a healthy auto-update
+  watcher or by operators with explicit runtime overrides.
+
 ## 0.2.3 - 2026-08-04
 
 - Read all finalized timelocked-weight commit buckets so validators reconcile
