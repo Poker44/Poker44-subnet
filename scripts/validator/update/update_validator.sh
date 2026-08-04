@@ -19,6 +19,8 @@ SAFE_BITTENSOR_SDK_MAX_MAJOR="${SAFE_BITTENSOR_SDK_MAX_MAJOR:-11}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# shellcheck source=migrate_validator_env.sh
+source "$SCRIPT_DIR/migrate_validator_env.sh"
 
 if [[ "$VALIDATOR_SCRIPT" != /* ]]; then
   VALIDATOR_SCRIPT="$REPO_ROOT/${VALIDATOR_SCRIPT#./}"
@@ -175,6 +177,7 @@ if [ -f "$REPO_ROOT/.env" ]; then
   source "$REPO_ROOT/.env"
   set +a
 fi
+migrate_transition_burn_default "$REPO_ROOT/.env"
 
 echo "[INFO] Restarting PM2 process '$PROCESS_NAME'..."
 if ! pm2 restart "$PROCESS_NAME" --update-env; then

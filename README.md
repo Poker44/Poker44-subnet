@@ -93,7 +93,7 @@ is refreshed every 720 blocks without querying miners again. There is no EMA.
 ## Current compatibility target
 
 - Product evaluation: Poker44 v3.0
-- Subnet release: `0.2.2`
+- Subnet release: `0.2.3`
 - Branch: `main`
 - Miner-visible schema: `4.1`
 - Bittensor transport: `MicroSessionDetectionSynapse`

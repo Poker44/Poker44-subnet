@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WATCHER = ROOT / "scripts/validator/update/auto_update_validator.sh"
+ENV_MIGRATION = ROOT / "scripts/validator/update/migrate_validator_env.sh"
 
 
 def run(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -87,3 +88,32 @@ def test_validator_runner_enables_the_watcher_by_default() -> None:
     assert 'AUTO_UPDATE_ENABLED="${AUTO_UPDATE_ENABLED:-true}"' in runner
     assert 'pm2 start bash --name "$AUTO_UPDATE_PM2_NAME"' in runner
 
+
+def migrated_burn(value: str, env_file: Path) -> str:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; migrate_transition_burn_default "$2" >/dev/null; '
+            'printf "%s" "$POKER44_BURN_FRACTION"',
+            "burn-migration",
+            str(ENV_MIGRATION),
+            str(env_file),
+        ],
+        env={**os.environ, "POKER44_BURN_FRACTION": value},
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return result.stdout
+
+
+def test_update_migrates_only_the_inherited_old_burn_default(tmp_path: Path) -> None:
+    implicit_env = tmp_path / "implicit.env"
+    implicit_env.write_text("POKER44_POLL_INTERVAL_SECONDS=300\n", encoding="utf-8")
+    explicit_env = tmp_path / "explicit.env"
+    explicit_env.write_text("POKER44_BURN_FRACTION=0.90\n", encoding="utf-8")
+
+    assert migrated_burn("0.90", implicit_env) == "0.70"
+    assert migrated_burn("0.90", explicit_env) == "0.90"
+    assert migrated_burn("0.80", implicit_env) == "0.80"
