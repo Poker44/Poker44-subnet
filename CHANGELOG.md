@@ -4,6 +4,8 @@
 
 - Read all finalized timelocked-weight commit buckets so validators reconcile
   accepted commits without false missing-commit warnings or redundant retries.
+- Change the default transition allocation from 90/5/5 to 70% owner burn, 5%
+  tournament funding and 25% round winner.
 - Align miner, validator-workflow and training-data documentation with the
   deployed schema-v4.1 contract.
 - Add canonical `MicroSessionDetectionSynapse` request and response examples.

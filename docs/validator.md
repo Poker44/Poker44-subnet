@@ -56,14 +56,14 @@ The default on-chain target is:
 
 | Role | Default | Resolution |
 | --- | ---: | --- |
-| Burn | 90% | Current subnet owner hotkey read from chain |
+| Burn | 70% | Current subnet owner hotkey read from chain |
 | Tournament funding | 5% | `POKER44_FUNDING_HOTKEY` |
-| Round winner | 5% | Remainder after burn and funding |
+| Round winner | 25% | Remainder after burn and funding |
 
 Configuration:
 
 ```bash
-export POKER44_BURN_FRACTION=0.90
+export POKER44_BURN_FRACTION=0.70
 export POKER44_FUNDING_FRACTION=0.05
 export POKER44_FUNDING_HOTKEY=5DUYX7X2Z9Jizr1NABUFDYV7ruFVNcUmKdxw9HxVP3sN9RUD
 ```

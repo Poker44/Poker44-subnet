@@ -175,8 +175,8 @@ is insufficient because calibration is part of validator scoring.
 
 The validator keeps labels locally, validates the response, computes quality,
 selects the deterministic winner and submits the transition allocation when
-cadence permits: 90% to the live subnet owner, 5% to the configured tournament
-funding hotkey and 5% to the winner by default. The dashboard receives signed
+cadence permits: 70% to the live subnet owner, 5% to the configured tournament
+funding hotkey and 25% to the winner by default. The dashboard receives signed
 observability events only; it does not calculate or provide weights.
 
 An invalid response, missing response, wrong output length, non-finite value or
