@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import os
 import socket
 from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import bittensor as bt
 import numpy as np
 
 from poker44.platform.models import ValidationRound
+from poker44.utils.encrypted_endpoints import is_masked_axon
 from poker44.validator.evaluation.models import MinerEvaluation
 from poker44.validator.evaluation.redteam_gate import audit_redteam_leakage
 from poker44.validator.evaluation.reward import reward
-from poker44.utils.encrypted_endpoints import is_masked_axon
 from poker44.validator.tracks import MICRO_SESSION_EVALUATION
 
 
@@ -31,7 +34,7 @@ class ValidatorEvaluationMixin:
         restored: list[MinerEvaluation] = []
         for row in rows:
             if not isinstance(row, dict):
-                raise RuntimeError("Stored evaluation evidence is malformed")
+                raise TypeError("Stored evaluation evidence is malformed")
             restored.append(
                 MinerEvaluation(
                     uid=int(row["uid"]),
@@ -111,8 +114,203 @@ class ValidatorEvaluationMixin:
         try:
             value = float(response.dendrite.process_time)
             return value if np.isfinite(value) and value >= 0.0 else None
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _align_responses(responses: list[Any], expected_count: int) -> list[Any]:
+        aligned = list(responses[:expected_count])
+        aligned.extend([None] * (expected_count - len(aligned)))
+        return aligned
+
+    def _evaluate_miner_responses(
+        self,
+        *,
+        validation_round: ValidationRound,
+        uids: list[int],
+        responses: list[Any],
+    ) -> list[MinerEvaluation]:
+        evaluations: list[MinerEvaluation] = []
+        allow_single_class = (
+            os.getenv("POKER44_E2E_ALLOW_SINGLE_CLASS_REWARD", "false").lower()
+            == "true"
+        )
+        for uid, response in zip(uids, responses):
+            hotkey = str(self.metagraph.hotkeys[uid])
+            try:
+                raw_scores = getattr(response, "risk_scores", None)
+                if not isinstance(raw_scores, list):
+                    raise TypeError("missing risk_scores")
+                scores = [float(value) for value in raw_scores]
+                if len(scores) != len(validation_round.labels):
+                    raise ValueError(
+                        f"returned {len(scores)} scores for "
+                        f"{len(validation_round.labels)} sessions"
+                    )
+                metrics = reward(
+                    scores,
+                    validation_round.labels,
+                    sample_weights=validation_round.sample_weights,
+                    allow_single_class=allow_single_class,
+                )
+                evaluation = MinerEvaluation(
+                    uid=uid,
+                    hotkey=hotkey,
+                    quality_score=metrics.reward,
+                    metrics=metrics.to_dict(),
+                    response_seconds=self._response_seconds(response),
+                    model_version=getattr(response, "model_version", None),
+                )
+            # A miner response must never abort evaluation of the remaining Axons.
+            except Exception as exc:  # noqa: BLE001
+                evaluation = MinerEvaluation(
+                    uid=uid,
+                    hotkey=hotkey,
+                    quality_score=0.0,
+                    metrics={},
+                    response_seconds=self._response_seconds(response),
+                    model_version=getattr(response, "model_version", None),
+                    error=str(exc),
+                )
+            evaluations.append(evaluation)
+        return evaluations
+
+    @staticmethod
+    def _write_miner_evaluations(
+        *,
+        round_id: str,
+        stage: str,
+        evaluations: list[MinerEvaluation],
+        responses: list[Any],
+        axons: list[Any],
+    ) -> None:
+        scores_path = Path(__file__).resolve().parents[3] / "scores.txt"
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+        top_miner = (
+            max(evaluations, key=lambda item: item.quality_score)
+            if evaluations
+            else None
+        )
+        axons_by_uid = {item.uid: axon for item, axon in zip(evaluations, axons)}
+        lines = [
+            "=" * 88,
+            f"ROUND: {round_id}",
+            f"DATE (UTC): {timestamp}",
+            f"SNAPSHOT: {stage.replace('_', ' ').upper()}",
+            "-" * 88,
+            "TOP MINER",
+        ]
+        if top_miner is None:
+            lines.append("  No miner evaluations available")
+        else:
+            top_axon = axons_by_uid.get(top_miner.uid)
+            top_ip = str(getattr(top_axon, "ip", None))
+            top_port = getattr(top_axon, "port", None)
+            lines.extend(
+                [
+                    f"  UID: {top_miner.uid}",
+                    f"  Hotkey: {top_miner.hotkey}",
+                    f"  Endpoint: {top_ip}:{top_port}",
+                    f"  Response time: {top_miner.response_seconds}s",
+                    f"  Total score: {top_miner.quality_score:.6f}",
+                    (
+                        "  Score components: "
+                        f"{json.dumps(top_miner.metrics, sort_keys=True)}"
+                    ),
+                ]
+            )
+        lines.extend(["-" * 88, "ALL MINERS"])
+        for position, (item, response, axon) in enumerate(
+            zip(evaluations, responses, axons), start=1
+        ):
+            status_code = getattr(
+                getattr(response, "dendrite", None), "status_code", None
+            )
+            status_message = getattr(
+                getattr(response, "dendrite", None), "status_message", None
+            )
+            ip = str(getattr(axon, "ip", None))
+            port = getattr(axon, "port", None)
+            lines.extend(
+                [
+                    f"  [{position}] UID {item.uid} | Hotkey: {item.hotkey}",
+                    f"      Endpoint: {ip}:{port}",
+                    f"      Total score: {item.quality_score:.6f}",
+                    (
+                        "      Score components: "
+                        f"{json.dumps(item.metrics, sort_keys=True)}"
+                    ),
+                    (
+                        f"      Response: {item.response_seconds}s | "
+                        f"Model: {item.model_version}"
+                    ),
+                    (
+                        f"      Status: {status_code} ({status_message}) | "
+                        f"Error: {item.error}"
+                    ),
+                ]
+            )
+        lines.extend(["=" * 88, ""])
+        descriptor = os.open(
+            scores_path,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o600,
+        )
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "a", encoding="utf-8") as scores_file:
+            fcntl.flock(scores_file, fcntl.LOCK_EX)
+            scores_file.write("\n".join(lines))
+            scores_file.flush()
+            fcntl.flock(scores_file, fcntl.LOCK_UN)
+
+    @staticmethod
+    def _log_miner_evaluations(
+        *,
+        stage: str,
+        evaluations: list[MinerEvaluation],
+        responses: list[Any],
+    ) -> None:
+        successful = sum(item.error is None for item in evaluations)
+        bt.logging.info(
+            "Miner evaluation summary | "
+            f"stage={stage} successful={successful}/{len(evaluations)} "
+            f"failed={len(evaluations) - successful}"
+        )
+        for item, response in zip(evaluations, responses):
+            status_code = getattr(
+                getattr(response, "dendrite", None), "status_code", None
+            )
+            status = "OK" if item.error is None else "FAILED"
+            bt.logging.info(
+                f"  {'✓' if item.error is None else '✗'} UID {item.uid:<4} "
+                f"{status:<6} | score={item.quality_score:.6f} "
+                f"response={item.response_seconds}s model={item.model_version} "
+                f"http={status_code} error={item.error or '-'}"
+            )
+
+    @staticmethod
+    async def _wait_before_miner_retry(
+        *, uids: list[int], responses: list[Any]
+    ) -> None:
+        missing_uids = [
+            uid
+            for uid, response in zip(uids, responses)
+            if not isinstance(getattr(response, "risk_scores", None), list)
+        ]
+        if not missing_uids:
+            return
+
+        delay = max(
+            0.0,
+            float(os.getenv("POKER44_MINER_RETRY_DELAY_SECONDS", "120")),
+        )
+        bt.logging.warning(
+            "Waiting before logging scores and retrying transient miners | "
+            f"uids={','.join(str(uid) for uid in missing_uids)} "
+            f"delay_seconds={delay:g}"
+        )
+        if delay:
+            await asyncio.sleep(delay)
 
     async def _retry_transient_responses(
         self,
@@ -132,14 +330,10 @@ class ValidatorEvaluationMixin:
         if not missing:
             return responses
 
-        delay = max(0.0, float(os.getenv("POKER44_MINER_RETRY_DELAY_SECONDS", "30")))
         bt.logging.warning(
             "Retrying transient miner responses | "
-            f"uids={','.join(str(uids[index]) for index in missing)} "
-            f"delay_seconds={delay:g}"
+            f"uids={','.join(str(uids[index]) for index in missing)}"
         )
-        if delay:
-            await asyncio.sleep(delay)
         retried = await self.dendrite(
             axons=[axons[index] for index in missing],
             synapse=synapse,
@@ -181,11 +375,7 @@ class ValidatorEvaluationMixin:
             != "true"
         ):
             raise RuntimeError("Red-team gate requires a mixed human/bot window")
-        if (
-            enforce_redteam
-            and not redteam.skipped
-            and not redteam.passed
-        ):
+        if enforce_redteam and not redteam.skipped and not redteam.passed:
             raise RuntimeError(
                 "Red-team leakage gate failed: "
                 f"feature={redteam.feature} reward={redteam.reward:.6f} "
@@ -196,77 +386,93 @@ class ValidatorEvaluationMixin:
         if not uids:
             bt.logging.warning("No reachable miner axons were found")
             return []
+        bt.logging.info("╔════════ Poker44 validator · miner evaluation ════════╗")
+        bt.logging.info(
+            "║ Preparing evaluation batch | "
+            f"round={validation_round.round_id} "
+            f"window={validation_round.lease.window_id} "
+            f"miners={len(uids)} items={len(validation_round.labels)}"
+        )
+        bt.logging.info("╚════════ Sending the first request batch to miners ═══╝")
         synapse = MICRO_SESSION_EVALUATION.build_synapse(
             validation_round,
             self.wallet.hotkey.ss58_address,
         )
-        responses = await self.dendrite(
-            axons=axons,
-            synapse=synapse,
-            deserialize=False,
-            timeout=float(self.config.neuron.timeout),
+        responses = list(
+            await self.dendrite(
+                axons=axons,
+                synapse=synapse,
+                deserialize=False,
+                timeout=float(self.config.neuron.timeout),
+            )
         )
+        responses = self._align_responses(responses, len(uids))
+        initial_evaluations = self._evaluate_miner_responses(
+            validation_round=validation_round,
+            uids=uids,
+            responses=responses,
+        )
+        initial_successes = sum(item.error is None for item in initial_evaluations)
+        bt.logging.info(
+            "✓ First miner request batch finished | "
+            f"responses={len(responses)}/{len(uids)} "
+            f"valid={initial_successes} retry_candidates="
+            f"{len(initial_evaluations) - initial_successes}"
+        )
+        self._log_miner_evaluations(
+            stage="before_retry",
+            evaluations=initial_evaluations,
+            responses=responses,
+        )
+        await self._wait_before_miner_retry(uids=uids, responses=responses)
+        bt.logging.info(
+            "→ Writing pre-retry miner scores | "
+            f"round={validation_round.round_id} file=scores.txt"
+        )
+        self._write_miner_evaluations(
+            round_id=validation_round.round_id,
+            stage="before_retry",
+            evaluations=initial_evaluations,
+            responses=responses,
+            axons=axons,
+        )
+        bt.logging.info("✓ Pre-retry scores appended to scores.txt")
         responses = await self._retry_transient_responses(
             uids=uids,
             axons=axons,
             synapse=synapse,
             responses=responses,
         )
-        evaluations: list[MinerEvaluation] = []
-        for uid, response in zip(uids, responses):
-            hotkey = str(self.metagraph.hotkeys[uid])
-            try:
-                raw_scores = getattr(response, "risk_scores", None)
-                if not isinstance(raw_scores, list):
-                    raise ValueError("missing risk_scores")
-                scores = [float(value) for value in raw_scores]
-                if len(scores) != len(validation_round.labels):
-                    raise ValueError(
-                        f"returned {len(scores)} scores for {len(validation_round.labels)} sessions"
-                    )
-                metrics = reward(
-                    scores,
-                    validation_round.labels,
-                    sample_weights=validation_round.sample_weights,
-                    allow_single_class=os.getenv(
-                        "POKER44_E2E_ALLOW_SINGLE_CLASS_REWARD", "false"
-                    ).lower()
-                    == "true",
-                )
-                evaluations.append(
-                    MinerEvaluation(
-                        uid=uid,
-                        hotkey=hotkey,
-                        quality_score=metrics.reward,
-                        metrics=metrics.to_dict(),
-                        response_seconds=self._response_seconds(response),
-                        model_version=getattr(response, "model_version", None),
-                    )
-                )
-            except Exception as exc:
-                evaluations.append(
-                    MinerEvaluation(
-                        uid=uid,
-                        hotkey=hotkey,
-                        quality_score=0.0,
-                        metrics={},
-                        response_seconds=self._response_seconds(response),
-                        model_version=getattr(response, "model_version", None),
-                        error=str(exc),
-                    )
-                )
-            item = evaluations[-1]
-            status_code = getattr(
-                getattr(response, "dendrite", None), "status_code", None
-            )
-            status_message = getattr(
-                getattr(response, "dendrite", None), "status_message", None
-            )
-            bt.logging.info(
-                "Miner evaluation | "
-                f"uid={uid} quality_score={item.quality_score:.6f} model={item.model_version} "
-                f"status={status_code} message={status_message} error={item.error}"
-            )
+        evaluations = self._evaluate_miner_responses(
+            validation_round=validation_round,
+            uids=uids,
+            responses=responses,
+        )
+        self._log_miner_evaluations(
+            stage="final",
+            evaluations=evaluations,
+            responses=responses,
+        )
+        bt.logging.info(
+            "→ Writing final miner scores | "
+            f"round={validation_round.round_id} file=scores.txt"
+        )
+        self._write_miner_evaluations(
+            round_id=validation_round.round_id,
+            stage="after_retry",
+            evaluations=evaluations,
+            responses=responses,
+            axons=axons,
+        )
+        final_successes = sum(item.error is None for item in evaluations)
+        bt.logging.info("╔════════ Miner evaluation complete ═══════════════════╗")
+        bt.logging.info(
+            "║ Final result | "
+            f"successful={final_successes}/{len(evaluations)} "
+            f"failed={len(evaluations) - final_successes} "
+            "scores_file=scores.txt"
+        )
+        bt.logging.info("╚════════ Continuing to rewards and settlement ═══════╝")
         await self._report_event(
             "miners_queried",
             validation_round,

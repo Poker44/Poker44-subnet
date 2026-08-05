@@ -19,7 +19,11 @@ async def test_round_flows_from_platform_lease_through_rewards_and_weights():
         expires_at="2099-01-01T00:00:00Z",
         sessions=[
             LeasedSession(
-                payload={"item_id": "item-1", "schema_version": "4.1", "window_id": "round-1"},
+                payload={
+                    "item_id": "item-1",
+                    "schema_version": "4.1",
+                    "window_id": "round-1",
+                },
                 is_bot=True,
             )
         ],
@@ -90,7 +94,11 @@ async def test_failed_round_reports_backoff_and_terminal_state():
             window_id="round-1",
             dataset_hash="hash",
             expires_at="2099-01-01T00:00:00Z",
-            sessions=[LeasedSession(payload={"item_id": "i1", "schema_version": "4.1"}, is_bot=True)],
+            sessions=[
+                LeasedSession(
+                    payload={"item_id": "i1", "schema_version": "4.1"}, is_bot=True
+                )
+            ],
         )
     )
     validator = SimpleNamespace(
@@ -103,9 +111,11 @@ async def test_failed_round_reports_backoff_and_terminal_state():
         _report_event=AsyncMock(),
     )
 
-    with patch("neurons.validator.asyncio.sleep", new=AsyncMock()):
-        with pytest.raises(RuntimeError, match="miner failure"):
-            await Validator.forward(validator)
+    with (
+        patch("neurons.validator.asyncio.sleep", new=AsyncMock()),
+        pytest.raises(RuntimeError, match="miner failure"),
+    ):
+        await Validator.forward(validator)
 
     validator.round_manager.fail.assert_called_once_with("round-1")
     validator._report_event.assert_awaited_once_with(
@@ -120,8 +130,7 @@ async def test_failed_round_reports_backoff_and_terminal_state():
 
 
 @pytest.mark.asyncio
-async def test_transient_missing_miner_response_is_retried(monkeypatch):
-    monkeypatch.setenv("POKER44_MINER_RETRY_DELAY_SECONDS", "0")
+async def test_transient_missing_miner_response_is_retried():
     valid = SimpleNamespace(risk_scores=[0.2])
     missing = SimpleNamespace(risk_scores=None)
     recovered = SimpleNamespace(risk_scores=[0.8])
@@ -154,6 +163,169 @@ async def test_transient_missing_miner_response_is_retried(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_waits_two_minutes_before_logging_and_retrying_missing_miners():
+    valid = SimpleNamespace(risk_scores=[0.2])
+    missing = SimpleNamespace(risk_scores=None)
+
+    with patch(
+        "poker44.validator.evaluation.mixin.asyncio.sleep", new=AsyncMock()
+    ) as sleep:
+        await ValidatorEvaluationMixin._wait_before_miner_retry(
+            uids=[2, 3], responses=[valid, missing]
+        )
+
+    sleep.assert_awaited_once_with(120.0)
+
+
+def test_miner_evaluation_log_shows_summary_and_per_miner_status():
+    evaluations = [
+        MinerEvaluation(
+            uid=2,
+            hotkey="successful-miner",
+            quality_score=0.75,
+            metrics={"accuracy": 1.0},
+            response_seconds=0.25,
+            model_version="v1",
+        ),
+        MinerEvaluation(
+            uid=3,
+            hotkey="failed-miner",
+            quality_score=0.0,
+            metrics={},
+            response_seconds=None,
+            model_version=None,
+            error="missing risk_scores",
+        ),
+    ]
+    responses = [
+        SimpleNamespace(dendrite=SimpleNamespace(status_code=200)),
+        SimpleNamespace(dendrite=SimpleNamespace(status_code=408)),
+    ]
+
+    with patch("poker44.validator.evaluation.mixin.bt.logging.info") as log:
+        ValidatorEvaluationMixin._log_miner_evaluations(
+            stage="before_retry",
+            evaluations=evaluations,
+            responses=responses,
+        )
+
+    messages = [call.args[0] for call in log.call_args_list]
+    assert "stage=before_retry successful=1/2 failed=1" in messages[0]
+    assert "✓ UID 2" in messages[1]
+    assert "score=0.750000" in messages[1]
+    assert "✗ UID 3" in messages[2]
+    assert "error=missing risk_scores" in messages[2]
+
+
+def test_missing_trailing_miner_response_is_preserved_for_retry():
+    response = SimpleNamespace(risk_scores=[0.2])
+
+    aligned = ValidatorEvaluationMixin._align_responses([response], 2)
+
+    assert aligned == [response, None]
+
+
+def test_scores_file_contains_round_date_top_and_every_component(monkeypatch, tmp_path):
+    scores_path = tmp_path / "scores.txt"
+    monkeypatch.setattr(
+        "poker44.validator.evaluation.mixin.Path.resolve",
+        lambda _path: tmp_path / "poker44/validator/evaluation/mixin.py",
+    )
+    response = SimpleNamespace(
+        dendrite=SimpleNamespace(
+            process_time=0.25,
+            status_code=200,
+            status_message="OK",
+        ),
+        model_version="model-v1",
+    )
+    axon = SimpleNamespace(ip="192.0.2.10", port=8091)
+    evaluation = MinerEvaluation(
+        uid=3,
+        hotkey="miner-hotkey",
+        quality_score=0.75,
+        metrics={
+            "reward": 0.75,
+            "average_precision": 0.8,
+            "average_precision_skill": 0.7,
+            "recall_at_fpr_05": 0.6,
+            "false_positive_rate": 0.04,
+            "brier_skill": 0.5,
+            "accuracy": 0.9,
+        },
+        response_seconds=0.25,
+        model_version="model-v1",
+    )
+
+    ValidatorEvaluationMixin._write_miner_evaluations(
+        round_id="round-123",
+        stage="before_retry",
+        evaluations=[evaluation],
+        responses=[response],
+        axons=[axon],
+    )
+
+    contents = scores_path.read_text()
+    assert "ROUND: round-123" in contents
+    assert "DATE (UTC):" in contents
+    assert "SNAPSHOT: BEFORE RETRY" in contents
+    assert "TOP MINER" in contents
+    assert "UID: 3" in contents
+    assert "Total score: 0.750000" in contents
+    for component in evaluation.metrics:
+        assert contents.count(f'"{component}"') == 2
+    assert "Status: 200 (OK)" in contents
+    assert contents.count("miner-hotkey") == 2
+    assert contents.count("192.0.2.10:8091") == 2
+    assert contents.count("0.25s") == 2
+    assert scores_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_scores_file_appends_after_retry_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "poker44.validator.evaluation.mixin.Path.resolve",
+        lambda _path: tmp_path / "poker44/validator/evaluation/mixin.py",
+    )
+    response = SimpleNamespace(
+        dendrite=SimpleNamespace(status_code=408, status_message="Timeout"),
+    )
+    axon = SimpleNamespace(ip="192.0.2.20", port=8092)
+    evaluation = MinerEvaluation(
+        uid=4,
+        hotkey="failed-miner",
+        quality_score=0.0,
+        metrics={},
+        response_seconds=None,
+        model_version=None,
+        error="missing risk_scores",
+    )
+
+    ValidatorEvaluationMixin._write_miner_evaluations(
+        round_id="round-failed",
+        stage="before_retry",
+        evaluations=[evaluation],
+        responses=[response],
+        axons=[axon],
+    )
+    ValidatorEvaluationMixin._write_miner_evaluations(
+        round_id="round-failed",
+        stage="after_retry",
+        evaluations=[evaluation],
+        responses=[response],
+        axons=[axon],
+    )
+
+    contents = (tmp_path / "scores.txt").read_text()
+    assert contents.count("ROUND: round-failed") == 2
+    assert contents.count("DATE (UTC):") == 2
+    assert contents.count("SNAPSHOT: BEFORE RETRY") == 1
+    assert contents.count("SNAPSHOT: AFTER RETRY") == 1
+    assert contents.count("Total score: 0.000000") == 4
+    assert contents.count("Error: missing risk_scores") == 2
+    assert contents.count("192.0.2.20:8092") == 4
+
+
+@pytest.mark.asyncio
 async def test_evaluated_round_resumes_without_querying_miners():
     validation_round = ValidationRound(
         lease=SessionLease(
@@ -161,7 +333,11 @@ async def test_evaluated_round_resumes_without_querying_miners():
             window_id="window-resume",
             dataset_hash="hash",
             expires_at="2099-01-01T00:00:00Z",
-            sessions=[LeasedSession(payload={"item_id": "i1", "schema_version": "4.1"}, is_bot=True)],
+            sessions=[
+                LeasedSession(
+                    payload={"item_id": "i1", "schema_version": "4.1"}, is_bot=True
+                )
+            ],
         ),
         resume_state="EVALUATED",
         resume_evidence={
