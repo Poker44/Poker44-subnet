@@ -175,8 +175,8 @@ is insufficient because calibration is part of validator scoring.
 
 The validator keeps labels locally, validates the response, computes quality,
 selects the deterministic winner and submits the transition allocation when
-cadence permits: 70% to the live subnet owner, 5% to the configured tournament
-funding hotkey and 25% to the winner by default. The dashboard receives signed
+cadence permits: 30% to the live subnet owner, 5% to the configured tournament
+funding hotkey and 65% to the winner by default. The dashboard receives signed
 observability events only; it does not calculate or provide weights.
 
 An invalid response, missing response, wrong output length, non-finite value or
@@ -231,7 +231,7 @@ participate as players in a community test.
 
 Before running the tournament-based release:
 
-1. Pull release `0.2.4` from the `main` branch. Do not target the obsolete
+1. Pull release `0.2.5` from the `main` branch. Do not target the obsolete
    `dev@9cd1df5` contract.
 2. Configure `POKER44_MODEL_FACTORY=your_package.module:create_model`.
 3. Ensure the factory returns an object with `version`, `load()` and

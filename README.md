@@ -85,15 +85,15 @@ window:
 Invalid, missing, non-finite, out-of-range or wrong-length responses score
 zero. The highest positive finite score wins; exact ties use the lower UID.
 
-During the current transition, the validator target assigns 70% to the live
-subnet owner, 5% to the tournament-funding hotkey and 25% to the winning miner.
+During the current transition, the validator target assigns 30% to the live
+subnet owner, 5% to the tournament-funding hotkey and 65% to the winning miner.
 Winner-takes-all applies to that competitive miner share. The unchanged target
 is refreshed every 720 blocks without querying miners again. There is no EMA.
 
 ## Current compatibility target
 
 - Product evaluation: Poker44 v3.0
-- Subnet release: `0.2.4`
+- Subnet release: `0.2.5`
 - Branch: `main`
 - Miner-visible schema: `4.1`
 - Bittensor transport: `MicroSessionDetectionSynapse`

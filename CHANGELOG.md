@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.5 - 2026-08-06
+
+- Reduce the default owner burn from 70% to 30%, retain 5% tournament funding
+  and increase the round-winner share from 25% to 65%.
+- Migrate inherited 90% and 70% runner defaults during auto-update while
+  preserving an explicit `.env` override.
+- Advance the validator deployment gate so healthy `main` auto-update watchers
+  fetch and apply this reviewed release.
+
 ## 0.2.4 - 2026-08-04
 
 - Reissue the validator deployment gate so supervised validators reapply the

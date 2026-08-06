@@ -1,6 +1,6 @@
 # Validator
 
-Poker44 v0.2.1 has one evaluation path: manually published schema-v4.1
+Poker44 v0.2.5 has one evaluation path: manually published schema-v4.1
 tournament micro-sessions derived from consented telemetry. There is no legacy
 hand JSON track, EMA, GitHub/model-repository check, W&B integration or
 coldkey-level hotkey restriction.
@@ -56,14 +56,14 @@ The default on-chain target is:
 
 | Role | Default | Resolution |
 | --- | ---: | --- |
-| Burn | 70% | Current subnet owner hotkey read from chain |
+| Burn | 30% | Current subnet owner hotkey read from chain |
 | Tournament funding | 5% | `POKER44_FUNDING_HOTKEY` |
-| Round winner | 25% | Remainder after burn and funding |
+| Round winner | 65% | Remainder after burn and funding |
 
 Configuration:
 
 ```bash
-export POKER44_BURN_FRACTION=0.70
+export POKER44_BURN_FRACTION=0.30
 export POKER44_FUNDING_FRACTION=0.05
 export POKER44_FUNDING_HOTKEY=5DUYX7X2Z9Jizr1NABUFDYV7ruFVNcUmKdxw9HxVP3sN9RUD
 ```
@@ -143,7 +143,7 @@ instead of being stashed or overwritten. Validator secrets remain in the local
 environment and `.env`; the watcher never runs with shell xtrace.
 
 The script defaults to Finney netuid 126, one concurrent forward and deploy
-version `0.2.4`. Before deployment run:
+version `0.2.5`. Before deployment run:
 
 ```bash
 ruff check poker44 neurons tests

@@ -30,18 +30,18 @@ def test_no_positive_finite_score_has_no_winner():
     assert winner_uid([evaluation(1, 0.0), evaluation(2, float("nan"))]) is None
 
 
-def test_transition_allocation_is_70_burn_5_funding_25_winner():
+def test_transition_allocation_is_30_burn_5_funding_65_winner():
     scores = emission_scores(
         10,
         winner_uid=2,
         owner_uid=0,
         funding_uid=7,
-        burn_fraction=0.70,
+        burn_fraction=0.30,
         funding_fraction=0.05,
     )
-    assert np.isclose(scores[0], 0.70)
+    assert np.isclose(scores[0], 0.30)
     assert np.isclose(scores[7], 0.05)
-    assert np.isclose(scores[2], 0.25)
+    assert np.isclose(scores[2], 0.65)
     assert np.isclose(scores.sum(), 1.0)
 
 
@@ -51,11 +51,11 @@ def test_transition_allocation_combines_funding_and_winner_roles():
         winner_uid=7,
         owner_uid=0,
         funding_uid=7,
-        burn_fraction=0.70,
+        burn_fraction=0.30,
         funding_fraction=0.05,
     )
-    assert np.isclose(scores[0], 0.70)
-    assert np.isclose(scores[7], 0.30)
+    assert np.isclose(scores[0], 0.30)
+    assert np.isclose(scores[7], 0.70)
 
 
 @pytest.mark.asyncio
@@ -64,7 +64,7 @@ async def test_emission_target_resolves_owner_from_chain_and_funding_from_config
     settlement.config = SimpleNamespace(
         netuid=126,
         neuron=SimpleNamespace(
-            burn_fraction=0.70,
+            burn_fraction=0.30,
             funding_fraction=0.05,
             funding_hotkey="funding-hotkey",
         ),
@@ -79,7 +79,7 @@ async def test_emission_target_resolves_owner_from_chain_and_funding_from_config
 
     scores, allocation = await settlement._emission_target(2)
 
-    assert np.allclose(scores, [0.70, 0.0, 0.25, 0.05])
+    assert np.allclose(scores, [0.30, 0.0, 0.65, 0.05])
     assert allocation["owner"]["uid"] == 0
     assert allocation["funding"]["uid"] == 3
     assert allocation["winner"]["uid"] == 2

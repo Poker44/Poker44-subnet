@@ -114,6 +114,7 @@ def test_update_migrates_only_the_inherited_old_burn_default(tmp_path: Path) -> 
     explicit_env = tmp_path / "explicit.env"
     explicit_env.write_text("POKER44_BURN_FRACTION=0.90\n", encoding="utf-8")
 
-    assert migrated_burn("0.90", implicit_env) == "0.70"
+    assert migrated_burn("0.90", implicit_env) == "0.30"
+    assert migrated_burn("0.70", implicit_env) == "0.30"
     assert migrated_burn("0.90", explicit_env) == "0.90"
     assert migrated_burn("0.80", implicit_env) == "0.80"
