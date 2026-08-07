@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -102,6 +103,27 @@ class ValidatorSettlementMixin:
         temporary.chmod(0o600)
         temporary.replace(path)
 
+    def _settlement_history_path(self) -> Path:
+        configured = os.getenv("POKER44_SETTLEMENT_HISTORY_PATH", "").strip()
+        if configured:
+            return Path(configured).expanduser()
+        return Path(self.config.neuron.full_path) / "settlement_history.jsonl"
+
+    def _append_settlement_history(self, event: str, state: dict) -> None:
+        path = self._settlement_history_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "state": state,
+        }
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        path.chmod(0o600)
+
     def _record_weight_settlement(
         self, validation_round: ValidationRound, weights: list[dict]
     ) -> None:
@@ -133,13 +155,16 @@ class ValidatorSettlementMixin:
         ]
         evaluation_runs.append(current_run)
         self._save_weight_settlement(
-            {
-                "version": 3,
+            state := {
+                "version": 4,
                 "dirty": True,
                 "round_id": validation_round.round_id,
                 "window_id": str(validation_round.lease.window_id),
                 "evaluation_runs": evaluation_runs,
                 "weights": weights,
+                "purpose": validation_round.lease.purpose,
+                "settlement_eligible": validation_round.lease.settlement_eligible,
+                "track_evaluation_run": True,
                 **(
                     {"last_submission_block": existing["last_submission_block"]}
                     if "last_submission_block" in existing
@@ -147,6 +172,120 @@ class ValidatorSettlementMixin:
                 ),
             }
         )
+        self._append_settlement_history("target_recorded", state)
+
+    @staticmethod
+    def _encoded_weight_map(rows: list[dict]) -> dict[int, int]:
+        _uids, _values, uint_uids, uint_weights = (
+            ValidatorSettlementMixin._prepared_weights_from_rows(rows)
+        )
+        return {
+            int(uid): int(weight)
+            for uid, weight in zip(uint_uids, uint_weights)
+            if int(weight) > 0
+        }
+
+    async def _recover_ineligible_settlement(self, state: dict) -> bool:
+        """Replace an observation target with the last vector visible before it.
+
+        Recovery is intentionally derived from chain history. It only runs when
+        the current chain still equals the ineligible local target, preventing a
+        stale validator from overwriting a newer legitimate round.
+        """
+
+        submission_block = int(state.get("last_submission_block", -1))
+        if submission_block <= 0:
+            bt.logging.error(
+                "Cannot recover observation settlement without its submission block"
+            )
+            return False
+        current = dict(
+            await asyncio.to_thread(self.subtensor.weights, self.config.netuid)
+        ).get(int(self.uid), [])
+        current_map = {
+            int(uid): int(weight) for uid, weight in current if int(weight) > 0
+        }
+        if current_map != self._encoded_weight_map(list(state.get("weights") or [])):
+            bt.logging.warning(
+                "Observation settlement is no longer the visible chain vector; "
+                "refusing to overwrite newer weights"
+            )
+            return False
+        recovery_block = submission_block - 1
+        historical = dict(
+            await asyncio.to_thread(
+                self.subtensor.weights, self.config.netuid, block=recovery_block
+            )
+        ).get(int(self.uid), [])
+        positive = [(int(uid), int(weight)) for uid, weight in historical if int(weight) > 0]
+        total = sum(weight for _uid, weight in positive)
+        if not positive or total <= 0:
+            bt.logging.error(
+                f"No prior validator weights found at recovery block {recovery_block}"
+            )
+            return False
+        weights = []
+        for uid, weight in positive:
+            if uid < 0 or uid >= len(self.metagraph.hotkeys):
+                bt.logging.error("Historical settlement contains an unregistered UID")
+                return False
+            weights.append(
+                {
+                    "uid": uid,
+                    "hotkey": str(self.metagraph.hotkeys[uid]),
+                    "weight": weight / total,
+                    "roles": ["recovered_prior_settlement"],
+                }
+            )
+        recovered = {
+            "version": 4,
+            "dirty": True,
+            "round_id": f"recovery:{state.get('round_id', 'unknown')}",
+            "window_id": str(state.get("window_id") or "unknown"),
+            "weights": weights,
+            "purpose": "RECOVERY",
+            "settlement_eligible": True,
+            "track_evaluation_run": False,
+            "recovery_of": {
+                "window_id": state.get("window_id"),
+                "submission_block": submission_block,
+                "source_block": recovery_block,
+            },
+            "last_submission_block": submission_block,
+        }
+        self._save_weight_settlement(recovered)
+        self._append_settlement_history("observation_target_recovered", recovered)
+        bt.logging.warning(
+            "Recovered the prior chain settlement after an ineligible observation window | "
+            f"source_block={recovery_block}"
+        )
+        return True
+
+    async def _ensure_settlement_target_is_eligible(self, state: dict) -> bool:
+        eligible = state.get("settlement_eligible")
+        if eligible is True:
+            return True
+        if eligible is False:
+            return await self._recover_ineligible_settlement(state)
+        metadata_reader = getattr(self.subnet_data, "window_metadata", None)
+        if metadata_reader is None:
+            # Compatibility for test harnesses and pre-contract custom clients.
+            return True
+        try:
+            metadata = await asyncio.to_thread(
+                metadata_reader, str(state.get("window_id") or "")
+            )
+        except Exception as exc:
+            bt.logging.error(
+                f"Could not verify settlement eligibility; refusing weight submission: {exc}"
+            )
+            return False
+        state["purpose"] = str(metadata.get("purpose") or "OBSERVATION_ONLY")
+        state["settlement_eligible"] = metadata.get("settlement_eligible") is True
+        self._save_weight_settlement(state)
+        if state["purpose"] != "PRODUCTION" or not state["settlement_eligible"]:
+            return await self._recover_ineligible_settlement(state)
+        return True
 
     def _pending_reveal_state_path(self) -> Path:
         configured = os.getenv("POKER44_PENDING_REVEALS_PATH", "").strip()
@@ -433,6 +572,9 @@ class ValidatorSettlementMixin:
         state = self._load_weight_settlement()
         if not state or not state.get("weights"):
             return False
+        if not await self._ensure_settlement_target_is_eligible(state):
+            return False
+        state = self._load_weight_settlement() or state
         dirty = bool(state.get("dirty"))
         due, cadence = await self._weight_submission_is_due(
             dirty=dirty,
@@ -501,7 +643,7 @@ class ValidatorSettlementMixin:
                 validation_round,
                 weights,
                 evidence,
-                track_evaluation_run=dirty,
+            track_evaluation_run=dirty and bool(state.get("track_evaluation_run", True)),
                 evaluation_runs=list(state.get("evaluation_runs") or []),
                 commit_finalized_reported=bool(
                     self.config.neuron.wait_for_finalization
@@ -515,7 +657,8 @@ class ValidatorSettlementMixin:
             validation_round,
             {"weights": weights, **evidence},
         )
-        if dirty:
+        track_evaluation_run = dirty and bool(state.get("track_evaluation_run", True))
+        if track_evaluation_run:
             evaluation_runs = list(state.get("evaluation_runs") or [])
             if not evaluation_runs:
                 evaluation_runs = [
@@ -586,11 +729,19 @@ class ValidatorSettlementMixin:
         state["dirty"] = False
         state["last_submission_block"] = cadence["current_block"]
         self._save_weight_settlement(state)
+        self._append_settlement_history("weights_submitted", state)
         return True
 
     async def _run_settlement_phase(
         self, validation_round: ValidationRound, evaluations: list[MinerEvaluation]
     ) -> dict:
+        if (
+            validation_round.lease.purpose != "PRODUCTION"
+            or not validation_round.lease.settlement_eligible
+        ):
+            raise RuntimeError(
+                "Refusing to settle an observation-only evaluation window"
+            )
         score_rows = ranked_score_rows(evaluations)
         await self._report_event(
             "scores_computed", validation_round, {"scores": score_rows}

@@ -88,6 +88,14 @@ class SubnetDataClient:
         )
         return SessionLease.from_payload(result)
 
+    def window_metadata(self, window_id: str) -> dict[str, Any]:
+        result = self._request(
+            "GET", f"/api/v1/evaluation/windows/{window_id}"
+        )
+        if not isinstance(result, dict):
+            raise RuntimeError("subnet data returned invalid window metadata")
+        return result
+
     def complete_lease(self, lease_id: str, round_id: str) -> None:
         self._request(
             "POST",

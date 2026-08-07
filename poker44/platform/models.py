@@ -38,6 +38,8 @@ class SessionLease:
     completed_at: str | None = None
     fixture_only: bool = False
     audit: dict[str, Any] = field(default_factory=dict)
+    purpose: str = "OBSERVATION_ONLY"
+    settlement_eligible: bool = False
 
     @classmethod
     def from_payload(cls, value: Any) -> "SessionLease":
@@ -124,6 +126,8 @@ class SessionLease:
                 str(value["completed_at"]) if value.get("completed_at") else None
             ),
             fixture_only=bool(value.get("fixture_only", False)),
+            purpose=str(value.get("purpose") or "").strip().upper(),
+            settlement_eligible=value.get("settlement_eligible") is True,
             audit={
                 key: raw
                 for key in (

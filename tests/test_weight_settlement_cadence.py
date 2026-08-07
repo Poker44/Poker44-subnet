@@ -33,6 +33,7 @@ def _harness(
         _report_event=AsyncMock(),
         _pending_weight_commits=AsyncMock(return_value=[]),
         _prepared_weights_from_rows=ValidatorSettlementMixin._prepared_weights_from_rows,
+        _encoded_weight_map=ValidatorSettlementMixin._encoded_weight_map,
     )
     harness._weight_settlement_state_path = lambda: tmp_path / "weight_settlement.json"
     harness._load_weight_settlement = MethodType(
@@ -44,6 +45,13 @@ def _harness(
     harness._weight_submission_is_due = MethodType(
         ValidatorSettlementMixin._weight_submission_is_due, harness
     )
+    harness._ensure_settlement_target_is_eligible = MethodType(
+        ValidatorSettlementMixin._ensure_settlement_target_is_eligible, harness
+    )
+    harness._append_settlement_history = MethodType(
+        ValidatorSettlementMixin._append_settlement_history, harness
+    )
+    harness._settlement_history_path = lambda: tmp_path / "settlement_history.jsonl"
     return harness
 
 
@@ -91,11 +99,15 @@ def test_new_round_replaces_target_and_keeps_unsettled_run_evidence(tmp_path):
     )
     first = SimpleNamespace(
         round_id="round-one",
-        lease=SimpleNamespace(window_id="window-one"),
+        lease=SimpleNamespace(
+            window_id="window-one", purpose="PRODUCTION", settlement_eligible=True
+        ),
     )
     second = SimpleNamespace(
         round_id="round-two",
-        lease=SimpleNamespace(window_id="window-two"),
+        lease=SimpleNamespace(
+            window_id="window-two", purpose="PRODUCTION", settlement_eligible=True
+        ),
     )
 
     harness._record_weight_settlement(first, [{"uid": 1, "hotkey": "one", "weight": 1.0}])
@@ -105,7 +117,7 @@ def test_new_round_replaces_target_and_keeps_unsettled_run_evidence(tmp_path):
     )
 
     state = harness._load_weight_settlement()
-    assert state["version"] == 3
+    assert state["version"] == 4
     assert state["weights"] == [{"uid": 2, "hotkey": "winner", "weight": 1.0}]
     assert state["evaluation_runs"] == [
         {
@@ -180,3 +192,57 @@ async def test_pending_weights_submit_once_allowed_and_refresh_after_720_blocks(
     )
     assert harness.set_weights.call_count == 2
     assert harness._report_event.await_args_list[-1].args[0] == "weights_refreshed"
+
+
+@pytest.mark.asyncio
+async def test_ineligible_window_recovers_prior_chain_vector_without_fixed_uid(tmp_path):
+    harness = _harness(tmp_path, current_block=500, rate_limit=100)
+    harness.metagraph.hotkeys = ["validator", "prior-winner", "funding", "bad-winner"]
+    invalid_rows = [
+        {"uid": 0, "hotkey": "validator", "weight": 0.30},
+        {"uid": 2, "hotkey": "funding", "weight": 0.05},
+        {"uid": 3, "hotkey": "bad-winner", "weight": 0.65},
+    ]
+    encoded = ValidatorSettlementMixin._encoded_weight_map(invalid_rows)
+    harness.subtensor.weights = Mock(
+        side_effect=lambda _netuid, block=None: [
+            (
+                0,
+                [(0, 65535), (1, 23405), (2, 4681)]
+                if block == 399
+                else list(encoded.items()),
+            )
+        ]
+    )
+    harness._recover_ineligible_settlement = MethodType(
+        ValidatorSettlementMixin._recover_ineligible_settlement, harness
+    )
+    harness._save_weight_settlement(
+        {
+            "version": 3,
+            "dirty": False,
+            "window_id": "observation-window",
+            "round_id": "observation-window",
+            "weights": invalid_rows,
+            "last_submission_block": 400,
+            "settlement_eligible": False,
+        }
+    )
+
+    recovered = await harness._ensure_settlement_target_is_eligible(
+        harness._load_weight_settlement()
+    )
+
+    assert recovered is True
+    state = harness._load_weight_settlement()
+    assert state["dirty"] is True
+    assert state["track_evaluation_run"] is False
+    assert state["recovery_of"]["source_block"] == 399
+    assert [row["uid"] for row in state["weights"]] == [0, 1, 2]
+    assert state["weights"][1]["hotkey"] == "prior-winner"
+    assert ValidatorSettlementMixin._encoded_weight_map(state["weights"]) == {
+        0: 65535,
+        1: 23405,
+        2: 4681,
+    }
+    harness.subtensor.weights.assert_any_call(44, block=399)

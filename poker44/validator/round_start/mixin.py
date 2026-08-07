@@ -35,6 +35,11 @@ class ValidatorRoundStartMixin:
             )
             return None
         lease = await asyncio.to_thread(self.subnet_data.acquire_lease, window_id)
+        if lease.purpose != "PRODUCTION" or not lease.settlement_eligible:
+            raise RuntimeError(
+                "Current evaluation endpoint returned a non-settlement window; "
+                "refusing to query miners or alter weights"
+            )
         if lease.completed_at:
             bt.logging.info(
                 "Current window was already evaluated by this validator | "
