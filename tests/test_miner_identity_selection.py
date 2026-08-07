@@ -20,8 +20,11 @@ class Harness(ValidatorEvaluationMixin):
         )
 
 
-def test_candidate_selection_queries_every_hotkey_even_when_coldkey_is_shared():
-    uids, _ = Harness()._candidate_miners("window-1")
+def test_candidate_selection_queries_every_hotkey_even_when_coldkey_is_shared_or_permitted():
+    harness = Harness()
+    harness.metagraph.validator_permit = [True, True, True, False]
+
+    uids, _ = harness._candidate_miners("window-1")
 
     assert uids == [1, 2, 3]
 
