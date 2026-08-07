@@ -185,6 +185,33 @@ class ValidatorSettlementMixin:
             if int(weight) > 0
         }
 
+    def _historical_validator_weights(self, block: int) -> list[tuple[int, int]]:
+        try:
+            return dict(
+                self.subtensor.weights(self.config.netuid, block=block)
+            ).get(int(self.uid), [])
+        except Exception as primary_error:
+            bt.logging.warning(
+                "Primary chain endpoint has pruned the recovery block; "
+                "retrying against the archive network"
+            )
+            archive = None
+            try:
+                archive = bt.Subtensor(
+                    network=os.getenv("POKER44_ARCHIVE_NETWORK", "archive")
+                )
+                return dict(
+                    archive.weights(self.config.netuid, block=block)
+                ).get(int(self.uid), [])
+            except Exception as archive_error:
+                raise RuntimeError(
+                    f"Historical settlement unavailable at block {block}: "
+                    f"primary={primary_error}; archive={archive_error}"
+                ) from archive_error
+            finally:
+                if archive is not None:
+                    archive.close()
+
     async def _recover_ineligible_settlement(self, state: dict) -> bool:
         """Replace an observation target with the last vector visible before it.
 
@@ -212,11 +239,15 @@ class ValidatorSettlementMixin:
             )
             return False
         recovery_block = submission_block - 1
-        historical = dict(
-            await asyncio.to_thread(
-                self.subtensor.weights, self.config.netuid, block=recovery_block
+        try:
+            historical = await asyncio.to_thread(
+                self._historical_validator_weights, recovery_block
             )
-        ).get(int(self.uid), [])
+        except Exception as exc:
+            bt.logging.error(
+                f"Could not recover prior chain settlement; preserving current state: {exc}"
+            )
+            return False
         positive = [(int(uid), int(weight)) for uid, weight in historical if int(weight) > 0]
         total = sum(weight for _uid, weight in positive)
         if not positive or total <= 0:

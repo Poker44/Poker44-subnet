@@ -48,6 +48,9 @@ def _harness(
     harness._ensure_settlement_target_is_eligible = MethodType(
         ValidatorSettlementMixin._ensure_settlement_target_is_eligible, harness
     )
+    harness._historical_validator_weights = MethodType(
+        ValidatorSettlementMixin._historical_validator_weights, harness
+    )
     harness._append_settlement_history = MethodType(
         ValidatorSettlementMixin._append_settlement_history, harness
     )
