@@ -91,7 +91,7 @@ keeps its public endpoint rather than becoming unreachable. See
 
 ## Run and verify
 
-The current compatibility target is subnet release `0.2.8` from the `dev`
+The current compatibility target is subnet release `0.2.8` from the `main`
 branch. The earlier `dev@9cd1df5` contract is obsolete and must not be used for
 v4.1 miner implementations.
 
@@ -115,7 +115,8 @@ that the miner answered a validator request.
 
 ## Training corpus
 
-The public `/api/v1/benchmark` API now serves labelled schema-v4.1 data from
+Poker44 v3.1.0 includes a public `/api/v1/benchmark` API that serves labelled
+schema-v4.1 data from
 separate miner-training tournaments. It does not expose a live evaluation
 window or its private labels. See the
 [miner training benchmark guide](training-benchmark.md) for tournament access,

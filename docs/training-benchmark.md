@@ -1,9 +1,9 @@
-# Poker44 miner training benchmark
+# Poker44 v3.1.0 miner training benchmark
 
-Poker44 publishes a labelled schema-v4.1 development corpus generated only by
-public miner-training tournaments. This corpus is separate from live evaluation:
-training tournament data is never eligible for a validator evaluation window,
-and private evaluation labels remain inside validators.
+Poker44 v3.1.0 publishes a labelled schema-v4.1 development corpus generated
+only by public miner-training tournaments. This corpus is separate from live
+evaluation: training tournament data is never eligible for a validator
+evaluation window, and private evaluation labels remain inside validators.
 
 ## Tournament source
 
@@ -50,8 +50,12 @@ curl -sS -o poker44-training.json \
   https://staging.platform.poker44.net/api/v1/benchmark/latest/download
 ```
 
-Every release has a stable `releaseId`, `releaseVersion`, SHA-256
-`datasetHash`, publication time, class counts, item count and decision count.
+Every release has a stable `releaseId`, a benchmark-specific `releaseVersion`,
+SHA-256 `datasetHash`, publication time, class counts, item count and decision
+count.
+The Poker44 product and benchmark contract described here is version `3.1.0`;
+`releaseVersion` identifies each generated corpus release and is not the product
+version.
 Historical release URLs are immutable and may be cached by `datasetHash`. The
 SHA-256 hash is calculated over the exact bytes returned by `/download`.
 
