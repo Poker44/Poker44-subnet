@@ -231,7 +231,7 @@ participate as players in a community test.
 
 Before running the tournament-based release:
 
-1. Pull release `0.2.5` from the `main` branch. Do not target the obsolete
+1. Pull release `0.2.8` from the `dev` branch. Do not target the obsolete
    `dev@9cd1df5` contract.
 2. Configure `POKER44_MODEL_FACTORY=your_package.module:create_model`.
 3. Ensure the factory returns an object with `version`, `load()` and
