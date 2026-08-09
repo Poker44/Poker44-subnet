@@ -1,107 +1,121 @@
-# Poker44 training data and benchmark status
+# Poker44 miner training benchmark
 
-This page documents the training-data status for Poker44 subnet `126` and the
-schema-v4.1 miner contract deployed with subnet release `0.2.5`.
+Poker44 publishes a labelled schema-v4.1 development corpus generated only by
+public miner-training tournaments. This corpus is separate from live evaluation:
+training tournament data is never eligible for a validator evaluation window,
+and private evaluation labels remain inside validators.
 
-## Current status
+## Tournament source
 
-The legacy public hand-chunk benchmark was retired on 31 July 2026. The former
-routes below are no longer part of the public API and return
-`ROUTE_NOT_FOUND`:
+The platform schedules three free miner-training tournaments per day, eight
+hours apart. Each tournament reserves ten places:
+
+- five browser-driven Poker44 agents;
+- three to five signed-in human players;
+- no coldkey verification;
+- no invitation code;
+- no entry fee.
+
+A tournament starts with all five agents and at least three present humans.
+Registration is limited to five humans, so agent seats cannot be consumed by
+public registrations. Participants consent to the same in-platform collection
+used to construct the development corpus.
+
+## API
+
+The staging API base is:
+
+```text
+https://staging.platform.poker44.net/api/v1/benchmark
+```
+
+The endpoints are public and require no account or Bittensor authentication:
 
 ```text
 GET /api/v1/benchmark
 GET /api/v1/benchmark/releases
-GET /api/v1/benchmark/chunks
-GET /api/v1/benchmark/chunks/:chunkId
+GET /api/v1/benchmark/latest
+GET /api/v1/benchmark/latest/download
+GET /api/v1/benchmark/releases/:releaseId
+GET /api/v1/benchmark/releases/:releaseId/download
 ```
 
-Do not build a v3.0 miner around old release files, hand chunks,
-`groundTruth`, `groundTruthLabels` or the v1/v2 session schemas. They do not
-represent the current evaluation input.
+`GET /api/v1/benchmark` returns schedule and latest-release metadata. The
+backend retains the latest immutable release until a later completed training
+tournament passes publication checks.
 
-At launch there is no public labeled v4.1 training corpus. Poker44 plans to
-publish a labeled development corpus after telemetry collection and dataset
-quality are stable. No publication date, endpoint or release format should be
-assumed until it is announced and documented here.
+```bash
+curl -sS https://staging.platform.poker44.net/api/v1/benchmark
+curl -sS -o poker44-training.json \
+  https://staging.platform.poker44.net/api/v1/benchmark/latest/download
+```
 
-Publishing a development corpus will not expose evaluation ground truth.
-Labels for live evaluation windows remain private to validators.
+Every release has a stable `releaseId`, `releaseVersion`, SHA-256
+`datasetHash`, publication time, class counts, item count and decision count.
+Historical release URLs are immutable and may be cached by `datasetHash`. The
+SHA-256 hash is calculated over the exact bytes returned by `/download`.
 
-## What miners receive during evaluation
+## Dataset contract
 
-Miners do not download the live evaluation dataset through HTTP. An authorized
-validator sends one `MicroSessionDetectionSynapse` request over Bittensor with:
-
-- `contract_version: "microsession-v1"`;
-- the window ID, SHA-256 dataset hash and validator-bound query ID;
-- an ordered `items` array of schema-v4.1 micro-sessions.
-
-Each item contains exactly four coarse strategic decisions and at least one
-postflop decision. The only decision fields are:
-
-- `decision_number`
-- `phase`
-- `position_group`
-- `pressure`
-- `action_type`
-- `size_bucket`
-- `is_all_in`
-
-The request contains no label, actor identity, bot family, cards, hand object,
-exact chip amount, timestamp, raw interaction telemetry, tournament identity
-or capture provenance. The normative schema is
-[`contracts/subject-session.v4.1.schema.json`](../contracts/subject-session.v4.1.schema.json),
-with a complete request in
-[`contracts/examples/microsession-request.v1.json`](../contracts/examples/microsession-request.v1.json).
-
-## Required miner output
-
-Return one finite probability in `[0, 1]` for every item, preserving input
-order:
+The download response contains `dataset.items`. Each item has the exact
+schema-v4.1 payload accepted by the miner model plus a separate training label:
 
 ```json
 {
-  "risk_scores": [0.12, 0.84, 0.51]
+  "itemId": "stable-public-item-id",
+  "payload": {
+    "schema_version": "4.1",
+    "item_id": "stable-public-item-id",
+    "window_id": "training_public_source",
+    "decisions": [
+      {
+        "decision_number": 1,
+        "phase": "preflop",
+        "position_group": "late",
+        "pressure": "facing_bet",
+        "action_type": "call",
+        "size_bucket": "not_applicable",
+        "is_all_in": false
+      }
+    ]
+  },
+  "label": 0,
+  "labelName": "human"
 }
 ```
 
-`0` is strongest human confidence and `1` is strongest bot confidence. The
-validator scores the continuous probabilities, so returning only hard class
-labels is insufficient. Invalid, missing, non-finite, out-of-range or
-wrong-length responses score zero.
+Real items contain exactly four decisions and at least one postflop decision.
+`label` is `0` for human and `1` for bot. Feed only each `payload` to the model;
+the label is the supervised target.
 
-The complete response example is
-[`contracts/examples/microsession-response.v1.json`](../contracts/examples/microsession-response.v1.json).
+The public corpus excludes raw telemetry, cards, exact chip amounts, timing,
+user IDs, actor groups, bot-family identifiers, tournament IDs and capture
+provenance. These exclusions prevent identity/provenance shortcuts and keep the
+training input aligned with `MicroSessionDetectionSynapse`.
 
-## Scoring
+## Publication controls
 
-Validators keep labels and private actor groups locally. Actor-balanced sample
-weights give equal mass to each actor within each class. Miner quality is:
+After a tournament completes, the backend finishes session assembly and
+publishes once only if the corpus:
 
-```text
-0.50 * average-precision skill
-+ 0.30 * recall at <=5% false-positive rate
-+ 0.20 * Brier skill
-```
+- contains both classes;
+- covers at least three human actors and five agent families;
+- preserves the four-decision v4.1 contract;
+- has no duplicate source decision;
+- passes position and pressure distribution checks.
 
-The highest positive finite score wins the competitive miner share. Exact ties
-use the lower UID.
+The complete dataset is stored in PostgreSQL before it becomes public. A
+release is never mutated or rebuilt in place; a later valid tournament creates
+a new release and becomes `latest`.
 
-## Development guidance before a corpus release
+## Recommended use
 
-Miners can implement and validate the transport, strict schema handling,
-inference shape and calibrated output locally. Synthetic fixtures may be used
-for software tests, but they are not representative performance benchmarks.
+1. Fetch `/benchmark` and record the latest `datasetHash`.
+2. Download its stable `downloadUrl` or `/benchmark/latest`.
+3. Verify the hash of the canonical dataset JSON in your ingestion pipeline.
+4. Train on `payload` and use `label` only as the target.
+5. Split by release when several tournaments are available.
+6. Do not use item IDs, window IDs, release order or hashes as model features.
 
-Recommended checks:
-
-1. Accept only `contract_version: "microsession-v1"` and schema `4.1`.
-2. Validate exactly four decisions with at least one postflop decision.
-3. Preserve item order and return exactly one score per item.
-4. Reject or safely fail malformed inputs and never emit non-finite values.
-5. Do not use IDs, hashes, order or request timing as behavioral features.
-6. Test probability calibration as well as ranking performance.
-
-The current implementation target is the `main` branch at release `0.2.5`.
-The old `dev@9cd1df5` hand/telemetry contract is obsolete.
+This is training data, not the live evaluation window. Validators continue to
+send label-free items privately through `MicroSessionDetectionSynapse`.

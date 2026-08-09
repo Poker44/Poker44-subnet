@@ -1,6 +1,6 @@
 # Validator
 
-Poker44 v0.2.5 has one evaluation path: manually published schema-v4.1
+Poker44 v0.2.8 has one evaluation path: manually published schema-v4.1
 tournament micro-sessions derived from consented telemetry. There is no legacy
 hand JSON track, EMA, GitHub/model-repository check, W&B integration or
 coldkey-level hotkey restriction.
@@ -138,12 +138,12 @@ pm2 describe poker44-validator-auto-update
 pm2 save
 ```
 
-Tracked local modifications or a checkout outside `main` stop auto-update
+Tracked local modifications or a checkout outside the configured target branch stop auto-update
 instead of being stashed or overwritten. Validator secrets remain in the local
 environment and `.env`; the watcher never runs with shell xtrace.
 
 The script defaults to Finney netuid 126, one concurrent forward and deploy
-version `0.2.5`. Before deployment run:
+version `0.2.8`. For the current rollout set `TARGET_BRANCH=dev` before deployment. Then run:
 
 ```bash
 ruff check poker44 neurons tests

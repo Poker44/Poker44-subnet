@@ -62,8 +62,9 @@ responsibility is deliberately narrow:
 - return exactly one finite, calibrated `risk_score` per item;
 - remain registered, authenticated and reachable when a window is evaluated.
 
-Miners do not play the data-generation tournament, download the live dataset,
-receive evaluation labels or reproduce tournament state. The model repository
+Miners do not download the live evaluation dataset or receive its labels.
+Separately, they may play free public miner-training tournaments and download
+the resulting labelled v4.1 corpus for model development. The model repository
 and model artifact are not inspected in the current release. There is no
 coldkey-level hotkey limit or legacy evaluation fallback.
 
@@ -93,8 +94,8 @@ is refreshed every 720 blocks without querying miners again. There is no EMA.
 ## Current compatibility target
 
 - Product evaluation: Poker44 v3.0
-- Subnet release: `0.2.5`
-- Branch: `main`
+- Subnet release: `0.2.8`
+- Branch: `dev`
 - Miner-visible schema: `4.1`
 - Bittensor transport: `MicroSessionDetectionSynapse`
 - Contract version: `microsession-v1`
@@ -109,7 +110,7 @@ compatible with the deployed evaluation path.
 | --- | --- |
 | [Miner guide](docs/miner.md) | Request contract, model interface, authentication and deployment |
 | [Tournament evaluation workflow](docs/tournament-evaluation-workflow.md) | Complete data-to-reward lifecycle and privacy boundary |
-| [Training data and benchmark status](docs/training-benchmark.md) | Current availability of development data and retirement of the v2 API |
+| [Miner training benchmark](docs/training-benchmark.md) | Public tournament cadence, download API, labels and dataset contract |
 | [Validator guide](docs/validator.md) | Window verification, miner selection, scoring and settlement |
 | [Data contracts](contracts/README.md) | Normative v4.1 and validator-report schemas |
 | [Encrypted Axon endpoints](docs/encrypted-axon-endpoints.md) | Optional endpoint protection and validator resolution |
