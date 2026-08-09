@@ -76,6 +76,33 @@ schema-v4.1 payload accepted by the miner model plus a separate training label:
         "action_type": "call",
         "size_bucket": "not_applicable",
         "is_all_in": false
+      },
+      {
+        "decision_number": 2,
+        "phase": "flop",
+        "position_group": "late",
+        "pressure": "no_call",
+        "action_type": "bet",
+        "size_bucket": "half_pot",
+        "is_all_in": false
+      },
+      {
+        "decision_number": 3,
+        "phase": "turn",
+        "position_group": "early",
+        "pressure": "facing_bet",
+        "action_type": "fold",
+        "size_bucket": "not_applicable",
+        "is_all_in": false
+      },
+      {
+        "decision_number": 4,
+        "phase": "river",
+        "position_group": "blinds",
+        "pressure": "no_call",
+        "action_type": "check",
+        "size_bucket": "not_applicable",
+        "is_all_in": false
       }
     ]
   },
