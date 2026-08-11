@@ -64,9 +64,11 @@ responsibility is deliberately narrow:
 
 Miners do not download the live evaluation dataset or receive its labels.
 Separately, they may play free public miner-training tournaments and download
-the resulting labelled v4.1 corpus for model development. The model repository
-and model artifact are not inspected in the current release. There is no
-coldkey-level hotkey limit or legacy evaluation fallback.
+the resulting cumulative, labelled v4.1 corpus for model development. Each
+public release identifies whether it is an early `preview` or has passed the
+full `stable` quality controls. The model repository and model artifact are not
+inspected in the current release. There is no coldkey-level hotkey limit or
+legacy evaluation fallback.
 
 Start with the [miner integration guide](docs/miner.md) and the canonical
 [request](contracts/examples/microsession-request.v1.json) and

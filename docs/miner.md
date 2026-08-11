@@ -116,8 +116,10 @@ that the miner answered a validator request.
 ## Training corpus
 
 Poker44 v3.1.0 includes a public `/api/v1/benchmark` API that serves labelled
-schema-v4.1 data from
-separate miner-training tournaments. It does not expose a live evaluation
-window or its private labels. See the
+schema-v4.1 data accumulated from separate miner-training tournaments. A
+release explicitly identifies itself as `preview` or `stable`; preview data is
+available for early integration while the unchanged stable-quality controls
+continue to be evaluated. It does not expose a live evaluation window or its
+private labels. See the
 [miner training benchmark guide](training-benchmark.md) for tournament access,
 download endpoints, integrity metadata and the exact item format.

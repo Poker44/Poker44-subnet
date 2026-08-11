@@ -40,9 +40,11 @@ GET /api/v1/benchmark/releases/:releaseId
 GET /api/v1/benchmark/releases/:releaseId/download
 ```
 
-`GET /api/v1/benchmark` returns schedule and latest-release metadata. The
-backend retains the latest immutable release until a later completed training
-tournament passes publication checks.
+`GET /api/v1/benchmark` returns schedule and preferred-release metadata,
+including `stableAvailable` and the release `qualityTier`. While no stable
+corpus exists, the preferred release is the newest `preview`; after a stable
+corpus exists, the preferred release remains the newest `stable`. All preview
+and stable releases remain available through `/releases`.
 
 ```bash
 curl -sS https://staging.platform.poker44.net/api/v1/benchmark
@@ -52,7 +54,8 @@ curl -sS -o poker44-training.json \
 
 Every release has a stable `releaseId`, a benchmark-specific `releaseVersion`,
 SHA-256 `datasetHash`, publication time, class counts, item count and decision
-count.
+count. It also declares `qualityTier` as `preview` or `stable` and includes the
+number of completed miner-training tournaments accumulated into the corpus.
 The Poker44 product and benchmark contract described here is version `3.1.0`;
 `releaseVersion` identifies each generated corpus release and is not the product
 version.
@@ -124,10 +127,15 @@ user IDs, actor groups, bot-family identifiers, tournament IDs and capture
 provenance. These exclusions prevent identity/provenance shortcuts and keep the
 training input aligned with `MicroSessionDetectionSynapse`.
 
-## Publication controls
+## Publication controls and quality tiers
 
-After a tournament completes, the backend finishes session assembly and
-publishes once only if the corpus:
+After each tournament completes, the backend finishes session assembly and
+builds a cumulative corpus from all completed miner-training tournaments up to
+that release. A non-empty schema-valid corpus can be published as `preview` so
+miners can validate ingestion and begin model development without waiting for
+the stable-quality threshold.
+
+A release is marked `stable` only when the cumulative corpus:
 
 - contains both classes;
 - covers at least three human actors and five agent families;
@@ -135,18 +143,26 @@ publishes once only if the corpus:
 - has no duplicate source decision;
 - passes position and pressure distribution checks.
 
+The audit result and any failed controls remain visible in release metadata.
+Preview means the corpus is usable for integration and experimentation, not
+that it has passed Poker44's stable benchmark quality controls. The controls
+are not disabled or relaxed to create a preview.
+
 The complete dataset is stored in PostgreSQL before it becomes public. A
-release is never mutated or rebuilt in place; a later valid tournament creates
-a new release and becomes `latest`.
+release is never mutated or rebuilt in place. Every later completed tournament
+creates a new cumulative release; older URLs and hashes remain unchanged.
 
 ## Recommended use
 
 1. Fetch `/benchmark` and record the latest `datasetHash`.
-2. Download its stable `downloadUrl` or `/benchmark/latest`.
-3. Verify the hash of the canonical dataset JSON in your ingestion pipeline.
-4. Train on `payload` and use `label` only as the target.
-5. Split by release when several tournaments are available.
-6. Do not use item IDs, window IDs, release order or hashes as model features.
+2. Inspect `qualityTier` and the audit. Prefer `stable` for comparable model
+   results; use `preview` for ingestion, experimentation and early training.
+3. Download its `downloadUrl` or `/benchmark/latest`.
+4. Verify the hash of the canonical dataset JSON in your ingestion pipeline.
+5. Train on `payload` and use `label` only as the target.
+6. Split carefully when several cumulative releases are available; releases
+   overlap by design, so do not treat them as independent samples.
+7. Do not use item IDs, window IDs, release order or hashes as model features.
 
 This is training data, not the live evaluation window. Validators continue to
 send label-free items privately through `MicroSessionDetectionSynapse`.
