@@ -91,6 +91,29 @@ def test_lease_preserves_completion_state_for_idempotent_restarts():
     assert lease.completed_at == "2026-07-15T12:01:00Z"
 
 
+def test_lease_launch_status_defaults_closed_and_accepts_launched():
+    payload = lease_payload()
+    assert SessionLease.from_payload(payload).launch_status == "DRAFT"
+
+    payload["launch_status"] = "launched"
+    assert SessionLease.from_payload(payload).launch_status == "LAUNCHED"
+
+
+def test_validator_control_fields_never_enter_miner_payloads():
+    payload = lease_payload()
+    payload["launch_status"] = "LAUNCHED"
+    payload["validator_access_mode"] = "RESTRICTED"
+    payload["allowed_validator_hotkeys"] = ["validator-a"]
+
+    validation_round = ValidationRound(SessionLease.from_payload(payload))
+
+    assert all(
+        not {"launch_status", "validator_access_mode", "allowed_validator_hotkeys"}
+        & set(item)
+        for item in validation_round.miner_items
+    )
+
+
 def test_lease_rejects_payloads_that_do_not_match_the_common_dataset_hash():
     payload = lease_payload()
     payload["sessions"][0]["payload"]["item_id"] = "tampered"

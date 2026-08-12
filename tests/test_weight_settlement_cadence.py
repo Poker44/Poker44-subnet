@@ -1,5 +1,4 @@
-from types import SimpleNamespace
-from types import MethodType
+from types import MethodType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -33,7 +32,6 @@ def _harness(
         _report_event=AsyncMock(),
         _pending_weight_commits=AsyncMock(return_value=[]),
         _prepared_weights_from_rows=ValidatorSettlementMixin._prepared_weights_from_rows,
-        _encoded_weight_map=ValidatorSettlementMixin._encoded_weight_map,
     )
     harness._weight_settlement_state_path = lambda: tmp_path / "weight_settlement.json"
     harness._load_weight_settlement = MethodType(
@@ -45,11 +43,8 @@ def _harness(
     harness._weight_submission_is_due = MethodType(
         ValidatorSettlementMixin._weight_submission_is_due, harness
     )
-    harness._ensure_settlement_target_is_eligible = MethodType(
-        ValidatorSettlementMixin._ensure_settlement_target_is_eligible, harness
-    )
-    harness._historical_validator_weights = MethodType(
-        ValidatorSettlementMixin._historical_validator_weights, harness
+    harness._ensure_settlement_target_is_launched = MethodType(
+        ValidatorSettlementMixin._ensure_settlement_target_is_launched, harness
     )
     harness._append_settlement_history = MethodType(
         ValidatorSettlementMixin._append_settlement_history, harness
@@ -103,13 +98,15 @@ def test_new_round_replaces_target_and_keeps_unsettled_run_evidence(tmp_path):
     first = SimpleNamespace(
         round_id="round-one",
         lease=SimpleNamespace(
-            window_id="window-one", purpose="PRODUCTION", settlement_eligible=True
+            window_id="window-one",
+            launch_status="LAUNCHED",
         ),
     )
     second = SimpleNamespace(
         round_id="round-two",
         lease=SimpleNamespace(
-            window_id="window-two", purpose="PRODUCTION", settlement_eligible=True
+            window_id="window-two",
+            launch_status="LAUNCHED",
         ),
     )
 
@@ -132,6 +129,41 @@ def test_new_round_replaces_target_and_keeps_unsettled_run_evidence(tmp_path):
             "window_id": "window-two",
         },
     ]
+
+
+def test_new_round_discards_automatic_recovery_evidence(tmp_path):
+    harness = _harness(tmp_path, current_block=10)
+    harness._record_weight_settlement = MethodType(
+        ValidatorSettlementMixin._record_weight_settlement, harness
+    )
+    harness._save_weight_settlement(
+        {
+            "version": 3,
+            "dirty": True,
+            "round_id": "recovery:old-round",
+            "window_id": "old-window",
+            "evaluation_runs": [
+                {"round_id": "recovery:old-round", "window_id": "old-window"}
+            ],
+            "weights": [{"uid": 9, "hotkey": "old", "weight": 1.0}],
+            "recovery_of": {"window_id": "old-window"},
+        }
+    )
+    current = SimpleNamespace(
+        round_id="new-round",
+        lease=SimpleNamespace(window_id="new-window", launch_status="LAUNCHED"),
+    )
+
+    harness._record_weight_settlement(
+        current, [{"uid": 2, "hotkey": "winner", "weight": 1.0}]
+    )
+
+    state = harness._load_weight_settlement()
+    assert state["round_id"] == "new-round"
+    assert state["evaluation_runs"] == [
+        {"round_id": "new-round", "window_id": "new-window"}
+    ]
+    assert "recovery_of" not in state
 
 
 @pytest.mark.asyncio
@@ -198,7 +230,7 @@ async def test_pending_weights_submit_once_allowed_and_refresh_after_720_blocks(
 
 
 @pytest.mark.asyncio
-async def test_ineligible_window_recovers_prior_chain_vector_without_fixed_uid(tmp_path):
+async def test_automatic_recovery_target_is_never_submitted(tmp_path):
     harness = _harness(tmp_path, current_block=500, rate_limit=100)
     harness.metagraph.hotkeys = ["validator", "prior-winner", "funding", "bad-winner"]
     invalid_rows = [
@@ -206,20 +238,6 @@ async def test_ineligible_window_recovers_prior_chain_vector_without_fixed_uid(t
         {"uid": 2, "hotkey": "funding", "weight": 0.05},
         {"uid": 3, "hotkey": "bad-winner", "weight": 0.65},
     ]
-    encoded = ValidatorSettlementMixin._encoded_weight_map(invalid_rows)
-    harness.subtensor.weights = Mock(
-        side_effect=lambda _netuid, block=None: [
-            (
-                0,
-                [(0, 65535), (1, 23405), (2, 4681)]
-                if block == 399
-                else list(encoded.items()),
-            )
-        ]
-    )
-    harness._recover_ineligible_settlement = MethodType(
-        ValidatorSettlementMixin._recover_ineligible_settlement, harness
-    )
     harness._save_weight_settlement(
         {
             "version": 3,
@@ -228,24 +246,15 @@ async def test_ineligible_window_recovers_prior_chain_vector_without_fixed_uid(t
             "round_id": "observation-window",
             "weights": invalid_rows,
             "last_submission_block": 400,
-            "settlement_eligible": False,
+            "recovery_of": {"window_id": "observation-window"},
         }
     )
 
-    recovered = await harness._ensure_settlement_target_is_eligible(
+    launched = await harness._ensure_settlement_target_is_launched(
         harness._load_weight_settlement()
     )
 
-    assert recovered is True
+    assert launched is False
     state = harness._load_weight_settlement()
-    assert state["dirty"] is True
-    assert state["track_evaluation_run"] is False
-    assert state["recovery_of"]["source_block"] == 399
-    assert [row["uid"] for row in state["weights"]] == [0, 1, 2]
-    assert state["weights"][1]["hotkey"] == "prior-winner"
-    assert ValidatorSettlementMixin._encoded_weight_map(state["weights"]) == {
-        0: 65535,
-        1: 23405,
-        2: 4681,
-    }
-    harness.subtensor.weights.assert_any_call(44, block=399)
+    assert state["weights"] == invalid_rows
+    harness.set_weights.assert_not_called()

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import hashlib
 import json
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from poker44.contracts import find_forbidden, validate_v4_micro_session
@@ -38,8 +38,7 @@ class SessionLease:
     completed_at: str | None = None
     fixture_only: bool = False
     audit: dict[str, Any] = field(default_factory=dict)
-    purpose: str = "OBSERVATION_ONLY"
-    settlement_eligible: bool = False
+    launch_status: str = "DRAFT"
 
     @classmethod
     def from_payload(cls, value: Any) -> "SessionLease":
@@ -126,8 +125,7 @@ class SessionLease:
                 str(value["completed_at"]) if value.get("completed_at") else None
             ),
             fixture_only=bool(value.get("fixture_only", False)),
-            purpose=str(value.get("purpose") or "").strip().upper(),
-            settlement_eligible=value.get("settlement_eligible") is True,
+            launch_status=str(value.get("launch_status") or "DRAFT").strip().upper(),
             audit={
                 key: raw
                 for key in (

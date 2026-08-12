@@ -73,8 +73,6 @@ class ValidatorEvaluationMixin:
         for uid, axon in enumerate(self.metagraph.axons):
             if uid == int(self.uid):
                 continue
-            if bool(self.metagraph.validator_permit[uid]):
-                continue
             override = str(overrides.get(str(uid), "")).strip()
             protected = False
             if override:
