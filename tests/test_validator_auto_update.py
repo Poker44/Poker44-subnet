@@ -2,7 +2,6 @@ import os
 import subprocess
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WATCHER = ROOT / "scripts/validator/update/auto_update_validator.sh"
 ENV_MIGRATION = ROOT / "scripts/validator/update/migrate_validator_env.sh"
@@ -94,8 +93,10 @@ def migrated_burn(value: str, env_file: Path) -> str:
         [
             "bash",
             "-c",
-            'source "$1"; migrate_transition_burn_default "$2" >/dev/null; '
-            'printf "%s" "$POKER44_BURN_FRACTION"',
+            (
+                'source "$1"; migrate_transition_burn_default "$2" >/dev/null; '
+                'printf "%s" "$POKER44_BURN_FRACTION"'
+            ),
             "burn-migration",
             str(ENV_MIGRATION),
             str(env_file),
@@ -112,9 +113,10 @@ def test_update_migrates_only_the_inherited_old_burn_default(tmp_path: Path) -> 
     implicit_env = tmp_path / "implicit.env"
     implicit_env.write_text("POKER44_POLL_INTERVAL_SECONDS=300\n", encoding="utf-8")
     explicit_env = tmp_path / "explicit.env"
-    explicit_env.write_text("POKER44_BURN_FRACTION=0.90\n", encoding="utf-8")
+    explicit_env.write_text("POKER44_BURN_FRACTION=0.30\n", encoding="utf-8")
 
-    assert migrated_burn("0.90", implicit_env) == "0.30"
-    assert migrated_burn("0.70", implicit_env) == "0.30"
-    assert migrated_burn("0.90", explicit_env) == "0.90"
+    assert migrated_burn("0.90", implicit_env) == "0.00"
+    assert migrated_burn("0.70", implicit_env) == "0.00"
+    assert migrated_burn("0.30", implicit_env) == "0.00"
+    assert migrated_burn("0.30", explicit_env) == "0.30"
     assert migrated_burn("0.80", implicit_env) == "0.80"

@@ -91,7 +91,7 @@ keeps its public endpoint rather than becoming unreachable. See
 
 ## Run and verify
 
-The current compatibility target is subnet release `0.2.8` from the `main`
+The current compatibility target is subnet release `0.2.9` from the `main`
 branch. The earlier `dev@9cd1df5` contract is obsolete and must not be used for
 v4.1 miner implementations.
 

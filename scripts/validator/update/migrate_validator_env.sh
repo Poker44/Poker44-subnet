@@ -9,9 +9,9 @@ migrate_transition_burn_default() {
     return 0
   fi
   case "${POKER44_BURN_FRACTION:-}" in
-    0.90|0.70)
-      export POKER44_BURN_FRACTION="0.30"
-      echo "[INFO] Migrated inherited burn default to 0.30"
+    0.90|0.70|0.30)
+      export POKER44_BURN_FRACTION="0.00"
+      echo "[INFO] Migrated inherited burn default to 0.00"
       ;;
   esac
 }
