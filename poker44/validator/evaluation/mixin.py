@@ -8,7 +8,7 @@ import json
 import os
 import socket
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -183,7 +183,7 @@ class ValidatorEvaluationMixin:
         axons: list[Any],
     ) -> None:
         scores_path = Path(__file__).resolve().parents[3] / "scores.txt"
-        timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         top_miner = (
             max(evaluations, key=lambda item: item.quality_score)
             if evaluations

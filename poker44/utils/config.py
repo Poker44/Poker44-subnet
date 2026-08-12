@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import traceback
 
 import bittensor as bt
-import os
-import traceback
 
 traceback.format_exc()
 
@@ -86,7 +86,7 @@ def add_args(cls, parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--neuron.burn_fraction",
         type=float,
-        default=float(os.getenv("POKER44_BURN_FRACTION", "0.30")),
+        default=float(os.getenv("POKER44_BURN_FRACTION", "0.00")),
         help="Fraction assigned to the live subnet owner hotkey.",
     )
     parser.add_argument(
@@ -153,17 +153,12 @@ def add_miner_args(cls, parser: argparse.ArgumentParser) -> None:
     )
 
 
-def check_config(cls, config: "bt.Config"):
+def check_config(cls, config: bt.Config):
     r"""Checks/validates the config namespace object."""
     _ensure_neuron_config(config)
     full_path = os.path.expanduser(
-        "{}/{}/{}/netuid{}/{}".format(
-            config.logging.logging_dir,  # TODO: change from ~/.bittensor/miners to ~/.bittensor/neurons
-            config.wallet.name,
-            config.wallet.hotkey,
-            config.netuid,
-            config.neuron.name,
-        )
+        f"{config.logging.logging_dir}/{config.wallet.name}/"
+        f"{config.wallet.hotkey}/netuid{config.netuid}/{config.neuron.name}"
     )
     config.neuron.full_path = os.path.expanduser(full_path)
     if not os.path.exists(config.neuron.full_path):
@@ -186,7 +181,7 @@ def config(cls) -> bt.Config:
     return cfg
 
 
-def _merge_argparse_namespace(config: "bt.Config", parser: argparse.ArgumentParser) -> None:
+def _merge_argparse_namespace(config: bt.Config, parser: argparse.ArgumentParser) -> None:
     namespace, _ = parser.parse_known_args(sys.argv[1:])
     for key, value in vars(namespace).items():
         if "." not in key:
@@ -198,7 +193,7 @@ def _merge_argparse_namespace(config: "bt.Config", parser: argparse.ArgumentPars
         setattr(getattr(config, section_name), field_name, value)
 
 
-def _ensure_neuron_config(config: "bt.Config") -> None:
+def _ensure_neuron_config(config: bt.Config) -> None:
     if not hasattr(config, "neuron") or config.neuron is None:
         config.neuron = bt.Config()
 
@@ -212,7 +207,7 @@ def _ensure_neuron_config(config: "bt.Config") -> None:
         "wait_for_finalization": True,
         "num_concurrent_forwards": int(os.getenv("NEURON_NUM_CONCURRENT_FORWARDS", "1")),
         "timeout": float(os.getenv("NEURON_TIMEOUT", "180")),
-        "burn_fraction": float(os.getenv("POKER44_BURN_FRACTION", "0.30")),
+        "burn_fraction": float(os.getenv("POKER44_BURN_FRACTION", "0.00")),
         "funding_fraction": float(os.getenv("POKER44_FUNDING_FRACTION", "0.05")),
         "funding_hotkey": os.getenv(
             "POKER44_FUNDING_HOTKEY",
