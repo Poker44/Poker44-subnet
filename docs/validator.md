@@ -1,6 +1,6 @@
 # Validator
 
-Poker44 subnet release `0.2.9` has one evaluation path: manually published
+Poker44 subnet release `0.2.10` has one evaluation path: manually published
 schema-v4.1 tournament micro-sessions derived from consented telemetry. There
 is no legacy hand JSON track, EMA, GitHub/model-repository check, W&B
 integration or coldkey-level hotkey restriction.

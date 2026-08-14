@@ -7,19 +7,23 @@ evaluation window, and private evaluation labels remain inside validators.
 
 ## Tournament source
 
-The platform schedules three free miner-training tournaments per day, eight
-hours apart. Each tournament reserves ten places:
+The staging platform keeps two free miner-training tables open concurrently.
+Each table reserves eight places:
 
 - five browser-driven Poker44 agents;
-- three to five signed-in human players;
+- exactly three signed-in human players;
 - no coldkey verification;
 - no invitation code;
 - no entry fee.
 
-A tournament starts with all five agents and at least three present humans.
-Registration is limited to five humans, so agent seats cannot be consumed by
-public registrations. Participants consent to the same in-platform collection
-used to construct the development corpus.
+A table has no scheduled start time. It starts as soon as three humans have
+registered and checked in and all five agents are ready. Human registration is
+capped at three, so agent seats cannot be consumed by public registrations.
+After a table reaches a terminal state, the scheduler creates its replacement
+automatically and keeps both public lanes available. Join from
+[`staging.platform.poker44.net/tournaments`](https://staging.platform.poker44.net/tournaments).
+Participants consent to the same in-platform collection used to construct the
+development corpus.
 
 ## API
 
@@ -40,11 +44,12 @@ GET /api/v1/benchmark/releases/:releaseId
 GET /api/v1/benchmark/releases/:releaseId/download
 ```
 
-`GET /api/v1/benchmark` returns schedule and preferred-release metadata,
-including `stableAvailable` and the release `qualityTier`. While no stable
-corpus exists, the preferred release is the newest `preview`; after a stable
-corpus exists, the preferred release remains the newest `stable`. All preview
-and stable releases remain available through `/releases`.
+`GET /api/v1/benchmark` returns the continuous-availability contract, the
+eight-seat tournament format and preferred-release metadata, including
+`stableAvailable` and the release `qualityTier`. While no stable corpus exists,
+the preferred release is the newest `preview`; after a stable corpus exists,
+the preferred release remains the newest `stable`. All preview and stable
+releases remain available through `/releases`.
 
 ```bash
 curl -sS https://staging.platform.poker44.net/api/v1/benchmark
