@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.10 - 2026-08-14
+
+- Reissue the validator deployment gate so healthy `main` auto-update watchers
+  apply the zero-burn allocation.
+- Migrate the exact persisted legacy `POKER44_BURN_FRACTION=0.30` setting to
+  `0.00` while preserving unrelated custom operator allocations.
+- Recompute a durable weight target from its recorded winner and roles when its
+  allocation differs from the active 0% burn, 5% funding configuration, then
+  submit it as soon as chain cadence and commit-reveal state allow.
+
 ## 0.2.9 - 2026-08-12
 
 - Set the default owner burn to 0%, retain 5% tournament funding and increase

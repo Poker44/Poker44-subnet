@@ -1,6 +1,7 @@
 from types import MethodType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import numpy as np
 import pytest
 
 from poker44.validator.settlement.mixin import ValidatorSettlementMixin
@@ -48,6 +49,9 @@ def _harness(
     )
     harness._append_settlement_history = MethodType(
         ValidatorSettlementMixin._append_settlement_history, harness
+    )
+    harness._align_settlement_target_allocation = MethodType(
+        ValidatorSettlementMixin._align_settlement_target_allocation, harness
     )
     harness._settlement_history_path = lambda: tmp_path / "settlement_history.jsonl"
     return harness
@@ -164,6 +168,56 @@ def test_new_round_discards_automatic_recovery_evidence(tmp_path):
         {"round_id": "new-round", "window_id": "new-window"}
     ]
     assert "recovery_of" not in state
+
+
+@pytest.mark.asyncio
+async def test_recorded_target_is_rebuilt_for_active_allocation(tmp_path):
+    harness = _harness(tmp_path, current_block=500)
+    harness.config.neuron.burn_fraction = 0.0
+    harness.config.neuron.funding_fraction = 0.05
+    harness._emission_target = AsyncMock(
+        return_value=(
+            np.asarray([0.0, 0.05, 0.95], dtype=np.float32),
+            {
+                "owner": {"uid": 0},
+                "funding": {"uid": 1},
+                "winner": {"uid": 2},
+            },
+        )
+    )
+    harness.prepare_weights = Mock(
+        return_value=(
+            np.asarray([0, 1, 2]),
+            np.asarray([0.0, 0.05, 0.95], dtype=np.float32),
+            np.asarray([1, 2]),
+            np.asarray([3277, 62258]),
+        )
+    )
+    harness.metagraph.hotkeys = ["owner", "funding", "winner"]
+    state = {
+        "version": 4,
+        "dirty": False,
+        "window_id": "window-1",
+        "round_id": "round-1",
+        "weights": [
+            {"uid": 0, "hotkey": "owner", "weight": 0.30, "roles": ["owner"]},
+            {"uid": 1, "hotkey": "funding", "weight": 0.05, "roles": ["funding"]},
+            {"uid": 2, "hotkey": "winner", "weight": 0.65, "roles": ["winner"]},
+        ],
+    }
+
+    updated = await ValidatorSettlementMixin._align_settlement_target_allocation(
+        harness, state
+    )
+
+    assert updated["dirty"] is True
+    assert updated["weights"] == [
+        {"uid": 1, "weight": pytest.approx(0.05), "hotkey": "funding", "roles": ["funding"]},
+        {"uid": 2, "weight": pytest.approx(0.95), "hotkey": "winner", "roles": ["winner"]},
+    ]
+    assert "target_allocation_updated" in harness._settlement_history_path().read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.mark.asyncio

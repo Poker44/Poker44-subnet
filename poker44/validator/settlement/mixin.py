@@ -495,6 +495,7 @@ class ValidatorSettlementMixin:
         if not await self._ensure_settlement_target_is_launched(state):
             return False
         state = self._load_weight_settlement() or state
+        state = await self._align_settlement_target_allocation(state)
         dirty = bool(state.get("dirty"))
         due, cadence = await self._weight_submission_is_due(
             dirty=dirty,
@@ -652,6 +653,38 @@ class ValidatorSettlementMixin:
         self._save_weight_settlement(state)
         self._append_settlement_history("weights_submitted", state)
         return True
+
+    async def _align_settlement_target_allocation(self, state: dict) -> dict:
+        """Rebuild a recorded target when its configured allocation changed."""
+
+        winner_rows = [
+            row for row in state.get("weights", []) if "winner" in row.get("roles", [])
+        ]
+        if len(winner_rows) != 1:
+            return state
+        winner = int(winner_rows[0]["uid"])
+        raw_weights, allocation = await self._emission_target(winner)
+        prepared_weights = await asyncio.to_thread(self.prepare_weights, raw_weights)
+        weights = weight_rows(prepared_weights)
+        for row in weights:
+            row["hotkey"] = str(self.metagraph.hotkeys[int(row["uid"])])
+            row["roles"] = [
+                role
+                for role, target in allocation.items()
+                if int(target["uid"]) == int(row["uid"])
+            ]
+        if weights == state.get("weights"):
+            return state
+        state["weights"] = weights
+        state["dirty"] = True
+        self._save_weight_settlement(state)
+        self._append_settlement_history("target_allocation_updated", state)
+        bt.logging.info(
+            "Updated pending weight target for active allocation | "
+            f"burn={float(self.config.neuron.burn_fraction):.4f} "
+            f"funding={float(self.config.neuron.funding_fraction):.4f}"
+        )
+        return state
 
     async def _run_settlement_phase(
         self, validation_round: ValidationRound, evaluations: list[MinerEvaluation]

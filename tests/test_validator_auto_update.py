@@ -109,7 +109,7 @@ def migrated_burn(value: str, env_file: Path) -> str:
     return result.stdout
 
 
-def test_update_migrates_only_the_inherited_old_burn_default(tmp_path: Path) -> None:
+def test_update_migrates_inherited_and_persisted_legacy_burn(tmp_path: Path) -> None:
     implicit_env = tmp_path / "implicit.env"
     implicit_env.write_text("POKER44_POLL_INTERVAL_SECONDS=300\n", encoding="utf-8")
     explicit_env = tmp_path / "explicit.env"
@@ -118,5 +118,19 @@ def test_update_migrates_only_the_inherited_old_burn_default(tmp_path: Path) -> 
     assert migrated_burn("0.90", implicit_env) == "0.00"
     assert migrated_burn("0.70", implicit_env) == "0.00"
     assert migrated_burn("0.30", implicit_env) == "0.00"
-    assert migrated_burn("0.30", explicit_env) == "0.30"
+    assert migrated_burn("0.30", explicit_env) == "0.00"
+    assert "POKER44_BURN_FRACTION=0.00" in explicit_env.read_text(encoding="utf-8")
+    assert explicit_env.stat().st_mode & 0o777 == 0o600
     assert migrated_burn("0.80", implicit_env) == "0.80"
+
+
+def test_update_migrates_quoted_persisted_legacy_burn(tmp_path: Path) -> None:
+    explicit_env = tmp_path / "quoted.env"
+    explicit_env.write_text(
+        'export POKER44_BURN_FRACTION="0.30"\n', encoding="utf-8"
+    )
+
+    assert migrated_burn("0.30", explicit_env) == "0.00"
+    assert explicit_env.read_text(encoding="utf-8") == (
+        "export POKER44_BURN_FRACTION=0.00\n"
+    )

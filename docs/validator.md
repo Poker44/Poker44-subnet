@@ -143,7 +143,7 @@ instead of being stashed or overwritten. Validator secrets remain in the local
 environment and `.env`; the watcher never runs with shell xtrace.
 
 The script defaults to Finney netuid 126, one concurrent forward and deploy
-version `0.2.9`. For the current rollout set `TARGET_BRANCH=main` before
+version `0.2.10`. For the current rollout set `TARGET_BRANCH=main` before
 deployment. Then run:
 
 ```bash

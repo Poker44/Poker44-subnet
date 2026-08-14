@@ -8,6 +8,6 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.2.9"
+__version__ = "0.2.10"
 __spec_version__ = 2
-VALIDATOR_DEPLOY_VERSION = "0.2.9"
+VALIDATOR_DEPLOY_VERSION = "0.2.10"
