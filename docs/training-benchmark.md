@@ -7,20 +7,22 @@ evaluation window, and private evaluation labels remain inside validators.
 
 ## Tournament source
 
-The staging platform keeps two free miner-training tables open concurrently.
-Each table reserves eight places:
+The staging platform supports two complementary free-entry modes:
 
-- five browser-driven Poker44 agents;
-- exactly three signed-in human players;
-- no coldkey verification;
-- no invitation code;
-- no entry fee.
+- three scheduled miner-training tournaments per day, eight hours apart, with
+  ten tournament places: five agents and three to five humans;
+- two additional roster-ready tables kept open concurrently, each with eight
+  places: five agents and exactly three humans.
 
-A table has no scheduled start time. It starts as soon as three humans have
-registered and checked in and all five agents are ready. Human registration is
-capped at three, so agent seats cannot be consumed by public registrations.
-After a table reaches a terminal state, the scheduler creates its replacement
-automatically and keeps both public lanes available. Join from
+Neither mode requires coldkey verification, an invitation code or an entry
+fee.
+
+Roster-ready tables have no scheduled start time. They start as soon as three
+humans have registered and checked in and all five agents are ready. Human
+registration is capped at three, so agent seats cannot be consumed by public
+registrations. After a roster-ready table reaches a terminal state, the
+scheduler creates its replacement automatically and keeps both public lanes
+available. Join either format from
 [`staging.platform.poker44.net/tournaments`](https://staging.platform.poker44.net/tournaments).
 Participants consent to the same in-platform collection used to construct the
 development corpus.
@@ -44,12 +46,12 @@ GET /api/v1/benchmark/releases/:releaseId
 GET /api/v1/benchmark/releases/:releaseId/download
 ```
 
-`GET /api/v1/benchmark` returns the continuous-availability contract, the
-eight-seat tournament format and preferred-release metadata, including
-`stableAvailable` and the release `qualityTier`. While no stable corpus exists,
-the preferred release is the newest `preview`; after a stable corpus exists,
-the preferred release remains the newest `stable`. All preview and stable
-releases remain available through `/releases`.
+`GET /api/v1/benchmark` returns the hybrid availability contract, both
+tournament formats and preferred-release metadata, including `stableAvailable`
+and the release `qualityTier`. While no stable corpus exists, the preferred
+release is the newest `preview`; after a stable corpus exists, the preferred
+release remains the newest `stable`. All preview and stable releases remain
+available through `/releases`.
 
 ```bash
 curl -sS https://staging.platform.poker44.net/api/v1/benchmark
